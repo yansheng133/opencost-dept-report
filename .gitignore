@@ -1,0 +1,18 @@
+# 白名單型：預設全部忽略，只放行明確列出的內容。
+# 新增檔案時要自己加一條放行，避免「不小心 commit 進去」。
+/*
+!/.gitignore
+!/LICENSE
+!/README.md
+!/Dockerfile
+!/deploy.sh
+!/app/
+!/app/app.py
+!/app/index.html
+!/k8s/
+!/k8s/*.yaml
+!/docs/
+!/docs/*.md
+!/examples/
+!/examples/*.yaml
+!/examples/*.sh

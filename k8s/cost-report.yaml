@@ -1,0 +1,89 @@
+# 部門成本分攤報表：在叢集內查 OpenCost、快取後對外提供網頁與 JSON。
+# 程式碼來源有兩種，擇一：
+#   A. 還沒有 registry：用 ConfigMap 掛程式碼 ＋ 官方 Python 映像檔（deploy.sh 預設，不需要建置）
+#   B. 已經打包成映像檔：把 image 換成你的映像檔、拿掉 configmap 掛載與 command
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cost-report
+  annotations:
+    field.cattle.io/description: 部門成本分攤報表（唯讀，資料來自 OpenCost）
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cost-report
+  namespace: cost-report
+  labels: {app: cost-report}
+spec:
+  selector: {app: cost-report}
+  ports:
+    - name: http          # 名稱很重要：Rancher／kube API 的 service proxy 會用它
+      port: 80
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cost-report
+  namespace: cost-report
+  labels: {app: cost-report}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: cost-report}}
+  template:
+    metadata:
+      labels: {app: cost-report}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: app
+          # ---- A：無 registry 版（deploy.sh 會把程式碼放進 ConfigMap）----
+          image: registry.suse.com/bci/python:3.12
+          command: ["python3", "/app/app.py"]
+          # ---- B：正式映像檔版 ----
+          # image: <你的 registry>/cost-report:0.1.0
+          # 並刪掉上面的 command，以及下方的 code volume 與 volumeMount
+          env:
+            - name: OPENCOST_URL
+              value: http://opencost.opencost.svc.cluster.local:9003
+            - name: CACHE_TTL
+              value: "60"
+            - name: WINDOWS
+              value: 1h,24h,7d
+            - name: DEFAULT_WINDOW
+              value: 24h
+            - name: CLUSTER_LABEL
+              value: rke2
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          ports:
+            - {name: http, containerPort: 8080}
+          readinessProbe:                 # 抓到第一份資料才算 ready
+            httpGet: {path: /readyz, port: http}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:                  # 只看行程活著，不要因為 OpenCost 掛掉就重啟自己
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 50m, memory: 96Mi}
+            limits: {memory: 192Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          volumeMounts:
+            - {name: code, mountPath: /app, readOnly: true}   # B 版請刪掉
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: code                                           # B 版請刪掉
+          configMap: {name: cost-report-code}
+        - name: tmp
+          emptyDir: {}

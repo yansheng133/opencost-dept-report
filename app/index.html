@@ -1,0 +1,526 @@
+<title>部門成本分攤表</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    color-scheme: light;
+    --paper: #f6f6f4;
+    --card: #fdfdfc;
+    --rule: #dedcd6;
+    --rule-soft: #e9e7e2;
+    --ink: #17181a;
+    --ink-2: #53565c;
+    --ink-3: #7c7f86;
+    --accent: #1c5cab;
+    --mfg: #2a78d6;
+    --rd: #eb6834;
+    --it: #1baf7a;
+    --idle: #9a9a93;
+    --unalloc: #6e7076;
+    --warn: #b4571a;
+    --good: #1a7f52;
+    --shadow: 0 1px 2px rgba(20,22,26,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --paper: #131415;
+      --card: #1b1c1e;
+      --rule: #34363a;
+      --rule-soft: #26282b;
+      --ink: #f2f2ef;
+      --ink-2: #b6b8bd;
+      --ink-3: #8b8e95;
+      --accent: #6da7ec;
+      --mfg: #3987e5;
+      --rd: #d95926;
+      --it: #199e70;
+      --idle: #6f7178;
+      --unalloc: #9a9da4;
+      --warn: #e0894a;
+      --good: #4cb489;
+      --shadow: none;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --paper: #131415;
+    --card: #1b1c1e;
+    --rule: #34363a;
+    --rule-soft: #26282b;
+    --ink: #f2f2ef;
+    --ink-2: #b6b8bd;
+    --ink-3: #8b8e95;
+    --accent: #6da7ec;
+    --mfg: #3987e5;
+    --rd: #d95926;
+    --it: #199e70;
+    --idle: #6f7178;
+    --unalloc: #9a9da4;
+    --warn: #e0894a;
+    --good: #4cb489;
+    --shadow: none;
+  }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.7;
+    padding: 0 16px;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding-block: 40px 72px; }
+  h1, h2, h3 { font-family: "Noto Serif TC", "Songti TC", serif; text-wrap: balance; margin: 0; }
+  h1 { font-size: clamp(28px, 5vw, 40px); font-weight: 700; letter-spacing: .01em; }
+  h2 { font-size: clamp(19px, 3vw, 23px); font-weight: 600; }
+  h3 { font-size: 16px; font-weight: 600; }
+  p { margin: 0; }
+  .num { font-family: "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+  .eyebrow { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); font-weight: 500; }
+  .muted { color: var(--ink-2); }
+  .small { font-size: 13px; }
+
+  header.masthead { border-bottom: 2px solid var(--ink); padding-bottom: 20px; display: flex; flex-direction: column; gap: 10px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: 13px; color: var(--ink-2); }
+  .meta b { color: var(--ink); font-weight: 500; }
+
+  section { margin-top: 44px; display: flex; flex-direction: column; gap: 16px; }
+  .sec-head { display: flex; flex-direction: column; gap: 4px; }
+
+  .totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 1px; background: var(--rule-soft); border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; }
+  .totals div { background: var(--card); padding: 16px 18px; display: flex; flex-direction: column; gap: 2px; }
+  .totals .k { font-size: 12.5px; color: var(--ink-3); }
+  .totals .v { font-size: 25px; font-weight: 600; letter-spacing: -.01em; }
+  .totals .s { font-size: 12.5px; color: var(--ink-2); }
+
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 12px 14px; border: 1px solid var(--rule); border-radius: 10px; background: var(--card); }
+  .controls fieldset { border: 0; margin: 0; padding: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .controls legend { float: left; margin-right: 12px; font-size: 13px; color: var(--ink-2); }
+  .seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 999px; overflow: hidden; }
+  .seg label { padding: 5px 13px; font-size: 13px; cursor: pointer; color: var(--ink-2); }
+  .seg label:has(input:checked) { background: var(--accent); color: #fff; }
+  .seg input { position: absolute; opacity: 0; pointer-events: none; }
+  .seg label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .chart { display: flex; flex-direction: column; gap: 10px; }
+  .row { display: grid; grid-template-columns: minmax(0, max-content) 1fr auto; align-items: center; gap: 12px; }
+  .row .name { font-size: 14px; display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+  #chart-unalloc .row .name { font-size: 13px; }
+  .swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+  .track { height: 22px; background: var(--rule-soft); border-radius: 3px; overflow: hidden; }
+  .fill { height: 100%; border-radius: 0 3px 3px 0; cursor: default; }
+  .fill.hatch { background-image: repeating-linear-gradient(45deg, rgba(255,255,255,.34) 0 3px, transparent 3px 7px); }
+  .row .val { font-size: 14px; min-width: 104px; text-align: right; }
+  .row .val span { color: var(--ink-3); font-size: 12px; margin-left: 5px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .scroll { overflow-x: auto; }
+  th, td { padding: 9px 10px; border-bottom: 1px solid var(--rule-soft); text-align: right; white-space: nowrap; }
+  th { font-size: 12.5px; font-weight: 500; color: var(--ink-3); border-bottom: 1px solid var(--rule); }
+  th:first-child, td:first-child { text-align: left; }
+  tbody tr:last-child td { border-bottom: 0; }
+  tfoot td { border-top: 1px solid var(--rule); border-bottom: 0; font-weight: 600; }
+  .card { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 6px 14px; box-shadow: var(--shadow); }
+  .dept-tag { display: inline-flex; align-items: center; gap: 6px; }
+
+  .minibar { display: inline-flex; align-items: center; gap: 6px; }
+  .minitrack { width: 72px; height: 7px; border-radius: 99px; background: var(--rule-soft); overflow: hidden; flex: none; }
+  .minifill { height: 100%; border-radius: 99px; }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; border: 1px solid var(--rule); color: var(--ink-2); }
+  .pill.dev { border-color: color-mix(in srgb, var(--rd) 45%, var(--rule)); color: var(--rd); }
+  .pill.prod { border-color: color-mix(in srgb, var(--mfg) 45%, var(--rule)); color: var(--mfg); }
+  .pill.none { border-style: dashed; }
+  .flag { font-size: 12.5px; color: var(--warn); }
+  .flag.ok { color: var(--good); }
+
+  .formula { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; font-size: 14px; padding: 12px 14px; border-left: 3px solid var(--accent); background: var(--card); border-radius: 0 8px 8px 0; }
+  .notes { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+  .note { border: 1px solid var(--rule); border-radius: 10px; padding: 13px 15px; background: var(--card); display: flex; flex-direction: column; gap: 5px; }
+  .note .t { font-weight: 500; font-size: 14px; }
+  .note .d { font-size: 13px; color: var(--ink-2); line-height: 1.6; }
+  footer { margin-top: 52px; padding-top: 18px; border-top: 1px solid var(--rule); font-size: 12.5px; color: var(--ink-3); display: flex; flex-direction: column; gap: 6px; }
+
+  #tip { position: fixed; z-index: 30; pointer-events: none; opacity: 0; transition: opacity .12s; background: var(--ink); color: var(--paper); font-size: 12.5px; padding: 6px 9px; border-radius: 6px; line-height: 1.5; white-space: nowrap; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+  @media (max-width: 560px) {
+    .row { grid-template-columns: 1fr; }
+    .row .track { grid-column: 1; }
+    .row .val { grid-column: 2; text-align: left; min-width: 0; }
+  }
+</style>
+
+<div class="wrap">
+  <header class="masthead">
+    <div class="eyebrow">Kubernetes 成本分攤 · 依 cost-center 標籤</div>
+    <h1>部門成本分攤表</h1>
+    <div class="meta">
+      <span>期間 <b class="num" id="m-window"></b></span>
+      <span>叢集 <b id="m-cluster">—</b></span>
+      <span>來源 <b>OpenCost allocation API</b></span>
+      <span>資料 <b id="m-fresh">載入中…</b></span>
+    </div>
+  </header>
+
+  <section>
+    <div class="totals">
+      <div><span class="k">期間總成本</span><span class="v num" id="t-total"></span><span class="s">全叢集，含閒置與未標籤</span></div>
+      <div><span class="k">三個部門合計</span><span class="v num" id="t-dept"></span><span class="s" id="t-dept-sub"></span></div>
+      <div><span class="k">閒置（無人使用的餘裕）</span><span class="v num" id="t-idle"></span><span class="s" id="t-idle-sub"></span></div>
+      <div><span class="k">無法分攤</span><span class="v num" id="t-unalloc"></span><span class="s" id="t-unalloc-sub"></span></div>
+    </div>
+    <p class="small muted">金額單位是<strong>成本單位</strong>，不是真實幣別：本環境使用示意單價（見最後一節）。樣本長度 <span class="num" id="m-minutes"></span> 分鐘，月推估 = 樣本 × <span class="num" id="m-factor"></span>（換算成 30 天）。</p>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>一、各部門應分攤金額</h2>
+      <p class="muted small">閒置成本要不要分攤給部門，是 chargeback 的第一個決定。兩種做法的<strong>總額完全相同</strong>，差別只在誰吸收那塊餘裕。</p>
+    </div>
+    <div class="controls">
+      <fieldset>
+        <legend>區間</legend>
+        <div class="seg" id="seg-window"></div>
+      </fieldset>
+      <fieldset>
+        <legend>閒置成本處理</legend>
+        <div class="seg">
+          <label><input type="radio" name="idle" id="idle-sep" value="separate" checked> 獨立列帳</label>
+          <label><input type="radio" name="idle" id="idle-shr" value="shared"> 按比例分攤</label>
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>只看</legend>
+        <div class="seg" id="seg-dept"></div>
+      </fieldset>
+      <span class="small muted" id="idle-hint"></span>
+    </div>
+    <div class="chart" id="chart-dept"></div>
+    <div class="card scroll">
+      <table>
+        <thead>
+          <tr><th>部門</th><th>CPU 核時</th><th>CPU 金額</th><th>記憶體 GiB 時</th><th>記憶體金額</th><th>儲存金額</th><th>小計</th><th>月推估</th></tr>
+        </thead>
+        <tbody id="tbl-dept"></tbody>
+        <tfoot id="tf-dept"></tfoot>
+      </table>
+    </div>
+    <div class="formula">
+      <span class="muted">計算方式</span>
+      <span class="num">金額 = CPU 核時 × 1.0 ＋ 記憶體 GiB 時 × 0.25 ＋ 儲存 GiB 時 × 0.001</span>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>二、正式環境 vs 測試環境</h2>
+      <p class="muted small">同一批工作負載再用 <code>env</code> 標籤切一次。測試環境常被當成「不用算」，實際上它有明確的金額。</p>
+    </div>
+    <div class="chart" id="chart-env"></div>
+    <p class="small muted" id="env-note"></p>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>三、每個工作負載付了多少、用了多少</h2>
+      <p class="muted small">計價依 <strong>max(申請量, 實際用量)</strong>。申請得多卻沒在用，差額就是可以回收的部分——但要先確認它是不是真的閒著。</p>
+    </div>
+    <div class="card scroll">
+      <table>
+        <thead>
+          <tr><th>工作負載</th><th>部門</th><th>環境</th><th>CPU 申請→實際</th><th>CPU 效率</th><th>記憶體 申請→實際</th><th>記憶體效率</th><th>金額</th></tr>
+        </thead>
+        <tbody id="tbl-wl"></tbody>
+      </table>
+    </div>
+    <div class="notes" id="wl-notes"></div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>四、無法分攤的成本</h2>
+      <p class="muted small">沒有 <code>cost-center</code> 標籤的東西無法歸屬到部門。這一塊的大小，就是標籤治理做得好不好的量化指標。</p>
+    </div>
+    <div class="chart" id="chart-unalloc"></div>
+    <p class="small muted">其中 <strong>shared-tools</strong> 是刻意不加標籤的示範；其餘多為叢集本身的系統元件（kube-system、監控、資安），實務上通常以「平台共用成本」另行分攤，或由平台團隊吸收。</p>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>五、計價依據</h2>
+      <p class="muted small">這些單價是<strong>示意值</strong>，用整數方便現場驗算。導入時換成實際的機器成本或雲端帳單即可，計算方式不變。</p>
+    </div>
+    <div class="card scroll">
+      <table>
+        <thead><tr><th>資源</th><th>單價</th><th>計價單位</th><th>本期用量</th><th>金額</th></tr></thead>
+        <tbody id="tbl-rate"></tbody>
+      </table>
+    </div>
+    <div class="notes">
+      <div class="note"><span class="t">為什麼是 max(申請, 實際)</span><span class="d">節點的容量被「申請量」佔住，別人就排不進來，所以即使沒在用也要付。實際用量超過申請時（例如可壓縮的 CPU 突波），則以實際用量計。</span></div>
+      <div class="note"><span class="t">兩種閒置處理的總額一致</span><span class="d">獨立列帳與按比例分攤，本期總額都是 <span class="num" id="n-consistency"></span>。差異在 1% 以內才算正確，這是 chargeback 對帳的第一道檢查。</span></div>
+      <div class="note"><span class="t">標籤不會回溯</span><span class="d"><code>env</code> 標籤是本期才加上的，更早的時段不會有。查詢跨越加標籤的時間點時，前段會落在「無法分攤」。</span></div>
+    </div>
+  </section>
+
+  <footer>
+    <div>資料來源：OpenCost <span class="num">1.121.2</span>（AppCo）＋ Prometheus <span class="num">3.14.0</span>，下游叢集 rke2（RKE2 <span class="num">1.35.6</span>，單節點 arm64）。</div>
+    <div>本頁為 demo 環境的真實量測值，非生產環境資料；單價為示意值。樣本 <span class="num" id="f-window"></span>。</div>
+  </footer>
+</div>
+<div id="tip" role="status"></div>
+
+
+<script>
+// 資料全部來自同一個服務的 /api/report（後端在叢集內查 OpenCost 並快取）。
+const NAME = { mfg: "製造部", rd: "研發部", it: "資訊部" };
+const COLOR_VARS = ["--mfg", "--rd", "--it"];
+let DATA = null, MONTH = 1, COLOR = {}, deptFilter = "all";
+
+const n4 = v => Number(v ?? 0).toFixed(4);
+const n2 = v => Number(v ?? 0).toFixed(2);
+const pct = v => (Number(v ?? 0) * 100).toFixed(1) + "%";
+const dname = id => NAME[id] || id;
+const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt !== undefined) e.textContent = txt; return e; };
+
+// ---- tooltip ----
+const tip = document.getElementById("tip");
+function bindTip(node, html) {
+  node.addEventListener("pointerenter", () => { tip.innerHTML = html; tip.style.opacity = "1"; });
+  node.addEventListener("pointermove", ev => {
+    const pad = 12;
+    tip.style.left = Math.min(ev.clientX + pad, window.innerWidth - tip.offsetWidth - 8) + "px";
+    tip.style.top = Math.max(ev.clientY - tip.offsetHeight - pad, 8) + "px";
+  });
+  node.addEventListener("pointerleave", () => { tip.style.opacity = "0"; });
+}
+
+function barRow(parent, { label, color, value, max, note, hatch, tipHtml }) {
+  const row = el("div", "row");
+  const name = el("div", "name");
+  const sw = el("span", "swatch"); sw.style.background = color; name.append(sw, el("span", null, label));
+  const track = el("div", "track");
+  const fill = el("div", "fill" + (hatch ? " hatch" : ""));
+  fill.style.width = Math.max((max ? value / max : 0) * 100, 0.6) + "%";
+  fill.style.background = color;
+  if (tipHtml) bindTip(fill, tipHtml);
+  track.append(fill);
+  const val = el("div", "val num", n4(value));
+  if (note) val.append(el("span", null, note));
+  row.append(name, track, val);
+  parent.append(row);
+}
+
+// ---- 一、部門分攤 ----
+function renderDept() {
+  const shared = document.getElementById("idle-shr").checked;
+  const chart = document.getElementById("chart-dept"); chart.textContent = "";
+  const rows = DATA.depts
+    .filter(d => deptFilter === "all" || d.id === deptFilter)
+    .map(d => ({ ...d, amount: shared ? d.shared : d.total }));
+  const unalloc = shared ? DATA.unallocated.shared : DATA.unallocated.separate;
+  const showOthers = deptFilter === "all";
+  const max = Math.max(...rows.map(r => r.amount), showOthers ? unalloc : 0, 0.0001);
+
+  rows.forEach(r => barRow(chart, {
+    label: dname(r.id), color: COLOR[r.id], value: r.amount, max,
+    note: pct(r.amount / DATA.total),
+    tipHtml: `${dname(r.id)}<br>小計 <b>${n4(r.amount)}</b>　月推估 ${n2(r.amount * MONTH)}`
+  }));
+  if (showOthers && !shared) barRow(chart, {
+    label: "閒置", color: "var(--idle)", value: DATA.idle, max, hatch: true, note: pct(DATA.idle / DATA.total),
+    tipHtml: `閒置：節點買下來、沒有人申請的餘裕<br><b>${n4(DATA.idle)}</b>`
+  });
+  if (showOthers) barRow(chart, {
+    label: "無法分攤", color: "var(--unalloc)", value: unalloc, max, note: pct(unalloc / DATA.total),
+    tipHtml: `沒有 cost-center 標籤的工作負載<br><b>${n4(unalloc)}</b>`
+  });
+
+  const tb = document.getElementById("tbl-dept"); tb.textContent = "";
+  rows.forEach(r => {
+    const tr = el("tr");
+    const c1 = el("td");
+    const tag = el("span", "dept-tag");
+    const sw = el("span", "swatch"); sw.style.background = COLOR[r.id];
+    tag.append(sw, el("span", null, dname(r.id))); c1.append(tag);
+    [c1, el("td", "num", n4(r.cpuCoreHours)), el("td", "num", n4(r.cpu)),
+      el("td", "num", n4(r.ramGiBHours)), el("td", "num", n4(r.ram)),
+      el("td", "num", n4(r.pv)), el("td", "num", n4(r.amount)), el("td", "num", n2(r.amount * MONTH))
+    ].forEach(td => tr.append(td));
+    tb.append(tr);
+  });
+  const deptSum = rows.reduce((s, r) => s + r.amount, 0);
+  const tf = document.getElementById("tf-dept"); tf.textContent = "";
+  const trf = el("tr");
+  trf.append(el("td", null, shared ? "合計（含分攤到的閒置）" : "合計"),
+    el("td"), el("td"), el("td"), el("td"), el("td"),
+    el("td", "num", n4(deptSum)), el("td", "num", n2(deptSum * MONTH)));
+  tf.append(trf);
+
+  document.getElementById("t-dept").textContent = n4(deptSum);
+  document.getElementById("t-dept-sub").textContent =
+    (deptFilter === "all" ? "三個部門" : dname(deptFilter)) + ` 佔總成本 ${pct(deptSum / DATA.total)}`;
+  document.getElementById("t-idle").textContent = shared ? "已分攤" : n4(DATA.idle);
+  document.getElementById("t-idle-sub").textContent = shared ? "按各項成本比例攤入" : `佔總成本 ${pct(DATA.idle / DATA.total)}`;
+  document.getElementById("t-unalloc").textContent = n4(unalloc);
+  document.getElementById("t-unalloc-sub").textContent = `佔總成本 ${pct(unalloc / DATA.total)}`;
+  document.getElementById("idle-hint").textContent = shared
+    ? "閒置已按比例攤入各部門與未標籤項目，總額不變。"
+    : "閒置單獨列出，由平台團隊吸收；部門只付自己申請的部分。";
+}
+
+// ---- 二、prod vs dev ----
+function renderEnv() {
+  const chart = document.getElementById("chart-env"); chart.textContent = "";
+  const rows = DATA.ccEnv.filter(r => deptFilter === "all" || r.dept === deptFilter);
+  const max = Math.max(...rows.flatMap(r => [r.prod, r.dev, r.other || 0]), 0.0001);
+  rows.forEach(r => {
+    [["prod", "正式", r.prod], ["dev", "測試", r.dev], ["other", "未標環境", r.other || 0]].forEach(([k, zh, v]) => {
+      if (k === "other" && !v) return;
+      barRow(chart, {
+        label: `${dname(r.dept)} ${zh}`, color: COLOR[r.dept], value: v, max,
+        hatch: k !== "prod", note: v === 0 ? "無" : "",
+        tipHtml: `${dname(r.dept)}　${zh}<br><b>${n4(v)}</b>`
+      });
+    });
+  });
+  const prod = rows.reduce((s, r) => s + r.prod, 0);
+  const dev = rows.reduce((s, r) => s + r.dev, 0);
+  const share = prod + dev ? pct(dev / (prod + dev)) : "—";
+  document.getElementById("env-note").innerHTML =
+    `斜紋為測試環境。正式 <span class="num">${n4(prod)}</span>、測試 <span class="num">${n4(dev)}</span>，` +
+    `<strong>測試環境佔 ${share}</strong>。測試環境常被當成「不用算」，但它佔用的容量和正式環境一樣要付。`;
+}
+
+// ---- 三、工作負載 ----
+function effCell(v, color) {
+  const wrap = el("span", "minibar");
+  const track = el("span", "minitrack");
+  const fill = el("span", "minifill");
+  fill.style.width = Math.min(v, 1) * 100 + "%";
+  fill.style.background = v >= 1 ? "var(--good)" : v < 0.1 ? "var(--warn)" : color;
+  track.append(fill);
+  wrap.append(track, el("span", "num small", pct(v)));
+  return wrap;
+}
+function renderWorkloads() {
+  const list = DATA.workloads.filter(w => deptFilter === "all" || w.dept === deptFilter);
+  const tb = document.getElementById("tbl-wl"); tb.textContent = "";
+  list.forEach(w => {
+    const tr = el("tr");
+    const c1 = el("td"); c1.append(el("span", null, w.name), el("div", "small muted", w.ns));
+    const c2 = el("td"); c2.style.textAlign = "left";
+    if (w.dept) { const t = el("span", "dept-tag"); const sw = el("span", "swatch"); sw.style.background = COLOR[w.dept] || "var(--unalloc)"; t.append(sw, el("span", null, dname(w.dept))); c2.append(t); }
+    else c2.append(el("span", "pill none", "未標籤"));
+    const c3 = el("td"); c3.style.textAlign = "left";
+    c3.append(el("span", "pill " + (w.env || "none"), w.env === "prod" ? "正式" : w.env === "dev" ? "測試" : "未標籤"));
+    const c5 = el("td"); c5.append(effCell(w.cpuEff, COLOR[w.dept] || "var(--unalloc)"));
+    const c7 = el("td"); c7.append(effCell(w.ramEff, COLOR[w.dept] || "var(--unalloc)"));
+    [c1, c2, c3, el("td", "num", `${w.cpuReq} → ${w.cpuUse}`), c5,
+      el("td", "num", `${w.ramReqMi} → ${w.ramUseMi} MiB`), c7, el("td", "num", n4(w.total))].forEach(td => tr.append(td));
+    tb.append(tr);
+  });
+
+  // 觀察重點由資料挑出來，不寫死
+  const notes = document.getElementById("wl-notes"); notes.textContent = "";
+  const add = (t, d) => { const n = el("div", "note"); n.append(el("span", "t", t)); const dd = el("span", "d"); dd.innerHTML = d; n.append(dd); notes.append(n); };
+  const cpuWaste = list.filter(w => w.cpuReq > 0 && w.cpuEff < 0.1).sort((a, b) => b.total - a.total)[0];
+  const ramWaste = list.filter(w => w.ramReqMi >= 128 && w.ramEff < 0.2).sort((a, b) => b.ramReqMi - a.ramReqMi)[0];
+  const busy = list.filter(w => w.cpuEff >= 0.5).sort((a, b) => b.cpuEff - a.cpuEff)[0];
+  const over = list.filter(w => w.cpuEff > 1).sort((a, b) => b.cpuEff - a.cpuEff)[0];
+  if (cpuWaste) add("只申請、沒在用", `<b>${cpuWaste.name}</b> 申請 ${cpuWaste.cpuReq} 核，CPU 效率 <span class="num">${pct(cpuWaste.cpuEff)}</span>。這段 CPU 金額 <span class="num">${n4(cpuWaste.total)}</span> 幾乎都是為「佔住的容量」付的。`);
+  if (ramWaste) add("記憶體型的浪費", `<b>${ramWaste.name}</b> 申請 ${ramWaste.ramReqMi} MiB、實際 ${ramWaste.ramUseMi} MiB，效率 <span class="num">${pct(ramWaste.ramEff)}</span>。只看 CPU 會漏掉這一種。`);
+  if (busy || over) add("低使用率 ≠ 該砍",
+    (busy ? `<b>${busy.name}</b> CPU 效率 <span class="num">${pct(busy.cpuEff)}</span>，是有在工作的服務。` : "") +
+    (over ? `<b>${over.name}</b> 效率超過 100%，實際用量高於申請量，反而該調高申請值。` : ""));
+}
+
+// ---- 四、無法分攤 ----
+function renderUnalloc() {
+  const chart = document.getElementById("chart-unalloc"); chart.textContent = "";
+  const rows = DATA.unallocRows.slice(0, 10);
+  const max = Math.max(...rows.map(r => r.total), 0.0001);
+  rows.forEach(r => barRow(chart, {
+    label: r.ns, color: "var(--idle)", value: r.total, max, hatch: true,
+    note: pct(r.total / DATA.unallocated.separate),
+    tipHtml: `${r.ns}<br><b>${n4(r.total)}</b>　佔無法分攤的 ${pct(r.total / DATA.unallocated.separate)}`
+  }));
+}
+
+// ---- 五、計價依據 ----
+function renderRates() {
+  const tb = document.getElementById("tbl-rate"); tb.textContent = "";
+  const sum = k => DATA.depts.reduce((s, d) => s + (d[k] || 0), 0);
+  [["CPU", DATA.rates.cpu, "每 vCPU 小時", sum("cpuCoreHours").toFixed(4) + " 核時", sum("cpu")],
+   ["記憶體", DATA.rates.ram, "每 GiB 小時", sum("ramGiBHours").toFixed(4) + " GiB 時", sum("ram")],
+   ["儲存", DATA.rates.storage, "每 GiB 小時", sum("pvGiBHours").toFixed(4) + " GiB 時", sum("pv")]
+  ].forEach(([res, rate, unit, used, amount]) => {
+    const tr = el("tr");
+    const c3 = el("td", null, unit); c3.style.textAlign = "left";
+    tr.append(el("td", null, res), el("td", "num", rate === null ? "—" : String(rate)), c3,
+      el("td", "num", used), el("td", "num", n4(amount)));
+    tb.append(tr);
+  });
+  document.getElementById("n-consistency").textContent = n4(DATA.total);
+}
+
+// ---- 控制列 ----
+function buildSegs() {
+  const sw = document.getElementById("seg-window"); sw.textContent = "";
+  (DATA.windows || [DATA.window.query]).forEach(w => {
+    const lab = el("label"); const inp = document.createElement("input");
+    inp.type = "radio"; inp.name = "win"; inp.value = w; inp.id = "win-" + w;
+    inp.checked = w === DATA.window.query;
+    inp.addEventListener("change", () => load(w));
+    lab.append(inp, document.createTextNode(w));
+    sw.append(lab);
+  });
+  const sd = document.getElementById("seg-dept"); sd.textContent = "";
+  [{ id: "all", name: "全部" }, ...DATA.depts.map(d => ({ id: d.id, name: dname(d.id) }))].forEach(d => {
+    const lab = el("label"); const inp = document.createElement("input");
+    inp.type = "radio"; inp.name = "dept"; inp.value = d.id; inp.id = "dept-" + d.id;
+    inp.checked = d.id === deptFilter;
+    inp.addEventListener("change", () => { deptFilter = d.id; renderAll(); });
+    lab.append(inp, document.createTextNode(d.name));
+    sd.append(lab);
+  });
+}
+
+function renderAll() { renderDept(); renderEnv(); renderWorkloads(); renderUnalloc(); renderRates(); }
+
+function renderMeta() {
+  const w = DATA.window;
+  document.getElementById("m-window").textContent =
+    `${w.start || "—"} → ${w.end || "—"}`;
+  document.getElementById("m-minutes").textContent = w.minutes;
+  document.getElementById("m-factor").textContent = MONTH.toFixed(1);
+  document.getElementById("t-total").textContent = n4(DATA.total);
+  document.getElementById("f-window").textContent = `${w.start} → ${w.end}（${w.minutes} 分鐘，查詢 ${w.query}）`;
+  const fresh = document.getElementById("m-fresh");
+  fresh.textContent = DATA.stale
+    ? `${DATA.ageSeconds} 秒前（OpenCost 連線異常，顯示最後一次成功的資料）`
+    : `${DATA.ageSeconds} 秒前更新（每 ${DATA.ttlSeconds} 秒重抓）`;
+  fresh.style.color = DATA.stale ? "var(--warn)" : "";
+  const cl = document.getElementById("m-cluster");
+  if (cl) cl.textContent = DATA.cluster || "—";
+}
+
+async function load(win) {
+  try {
+    const res = await fetch("api/report" + (win ? "?window=" + encodeURIComponent(win) : ""), { cache: "no-store" });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
+    DATA = await res.json();
+    DATA.depts.forEach((d, i) => { COLOR[d.id] = `var(${COLOR_VARS[i % COLOR_VARS.length]})`; });
+    MONTH = DATA.window.minutes ? (30 * 24 * 60) / DATA.window.minutes : 1;
+    buildSegs(); renderMeta(); renderAll();
+  } catch (e) {
+    document.getElementById("m-fresh").textContent = "讀取失敗：" + e.message;
+    document.getElementById("m-fresh").style.color = "var(--warn)";
+  }
+}
+
+document.querySelectorAll('input[name="idle"]').forEach(r => r.addEventListener("change", () => DATA && renderDept()));
+load();
+setInterval(() => load(DATA && DATA.window ? DATA.window.query : undefined), 60000);
+</script>

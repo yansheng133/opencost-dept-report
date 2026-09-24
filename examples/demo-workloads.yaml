@@ -1,0 +1,79 @@
+# 示範用的工作負載：刻意做出「日夜曲線」「記憶體浪費」「沒有標籤」三種情況，讓成本報表有東西可講。
+# 套用：kubectl apply -f demo-workloads.yaml
+# 資源合計：request CPU 300m、記憶體 640Mi；實際用量約 CPU 0.2 核（白天）、記憶體 50Mi。
+---
+# ① 日夜曲線：上班時間（08–20）吃 CPU，其餘時間幾乎不動 → 趨勢圖才有起伏
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-api
+  namespace: dept-mfg
+  labels: {app: order-api, cost-center: mfg, team: mes, owner: dave, env: prod}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: order-api}}
+  template:
+    metadata:
+      labels: {app: order-api, cost-center: mfg, team: mes, owner: dave, env: prod}
+    spec:
+      containers:
+      - name: app
+        image: registry.suse.com/bci/bci-busybox:latest
+        # 白天：忙 50 秒、歇 10 秒；晚上：整分鐘閒置。limit 200m 把尖峰壓在 0.2 核
+        # 容器裡的時鐘是 UTC，所以用 UTC 00–12 表示台北 08:00–20:00。
+        # 小時要去掉前導零（08、09 在某些 shell 會被當成八進位）。
+        command: ["sh", "-c", "while true; do h=$(date -u +%H); h=${h#0}; h=${h:-0}; if [ $h -ge 0 ] && [ $h -lt 12 ]; then end=$(( $(date +%s) + 50 )); while [ $(date +%s) -lt $end ]; do :; done; sleep 10; else sleep 60; fi; done"]
+        resources:
+          requests: {cpu: 200m, memory: 64Mi}
+          limits: {cpu: 200m, memory: 64Mi}
+---
+# ② 記憶體型浪費：要了 512Mi，實際只用約 30Mi → ramEfficiency 極低，rightsizing 的另一面
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: report-cache
+  namespace: dept-it
+  labels: {app: report-cache, cost-center: it, team: portal, owner: carol, env: dev}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: report-cache}}
+  template:
+    metadata:
+      labels: {app: report-cache, cost-center: it, team: portal, owner: carol, env: dev}
+    spec:
+      containers:
+      - name: app
+        image: registry.suse.com/bci/bci-busybox:latest
+        command: ["sh", "-c", "dd if=/dev/zero of=/dev/shm/cache bs=1M count=30 2>/dev/null; sleep infinity"]
+        resources:
+          requests: {cpu: 50m, memory: 512Mi}
+          limits: {memory: 512Mi}
+---
+# ③ 沒有任何成本標籤的 namespace 與工作負載 → __unallocated__ 有具體內容可以講「標籤治理」
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: shared-tools
+  annotations:
+    field.cattle.io/description: 共用工具，刻意不加 cost-center 標籤（示範無法分攤的成本）
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: log-collector
+  namespace: shared-tools
+  labels: {app: log-collector}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: log-collector}}
+  template:
+    metadata:
+      labels: {app: log-collector}
+    spec:
+      containers:
+      - name: app
+        image: registry.suse.com/bci/bci-busybox:latest
+        command: ["sh", "-c", "while true; do date >> /tmp/collected.log; sleep 20; done"]
+        resources:
+          requests: {cpu: 50m, memory: 64Mi}
+          limits: {memory: 64Mi}

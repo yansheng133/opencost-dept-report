@@ -1,0 +1,58 @@
+# 對外開放的範例。預設不要套用：這支服務沒有登入機制，開出去就是誰都看得到全部部門的成本。
+# 先決定認證怎麼做，再套用其中一種。
+#
+# ── 選項 1：Traefik basicAuth（最快，但只能「全有全無」，沒有部門之分）────────────
+# 先建帳密 Secret（htpasswd 格式，密碼不要寫進這個檔案）：
+#   htpasswd -nb finance '<密碼>' | kubectl -n cost-report create secret generic cost-report-users --from-file=users=/dev/stdin
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: cost-report-auth
+  namespace: cost-report
+spec:
+  basicAuth:
+    secret: cost-report-users
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cost-report
+  namespace: cost-report
+  annotations:
+    # middleware 的參照格式是 <namespace>-<名稱>@kubernetescrd
+    traefik.ingress.kubernetes.io/router.middlewares: cost-report-cost-report-auth@kubernetescrd
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts: [cost.example.internal]
+      secretName: cost-report-tls     # 這個叢集沒有 cert-manager，要自己建立或改裝 cert-manager
+  rules:
+    - host: cost.example.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: cost-report
+                port: {name: http}
+---
+# ── 選項 2：forwardAuth 接你們的 IdP（比較接近正式環境；需要另外部署 oauth2-proxy）──
+# apiVersion: traefik.io/v1alpha1
+# kind: Middleware
+# metadata: {name: cost-report-oidc, namespace: cost-report}
+# spec:
+#   forwardAuth:
+#     address: http://oauth2-proxy.auth.svc.cluster.local/oauth2/auth
+#     trustForwardHeader: true
+#     authResponseHeaders: [X-Auth-Request-User, X-Auth-Request-Email, X-Auth-Request-Groups]
+#
+# ── 選項 3：不開 Ingress，走 Rancher 的服務代理（沿用 Rancher 的登入與 Project 權限）──
+#   <Rancher>/k8s/clusters/<叢集 ID>/api/v1/namespaces/cost-report/services/http:cost-report:80/proxy/
+#   注意：網址結尾的斜線不能省，頁面用相對路徑取資料。
+#
+# 稽核上的已知缺口（寫進正式文件時要誠實揭露）：
+#   Traefik 這一層沒有對應的 CIS Benchmark，也沒有存取稽核日誌。
+#   需要留存「誰在什麼時候看了成本資料」的話，用選項 2 或 3，由 IdP／Rancher 留紀錄。
