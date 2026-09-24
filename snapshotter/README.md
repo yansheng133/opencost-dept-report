@@ -17,6 +17,12 @@ KCFG=<kubeconfig> bash deploy.sh --apply
 ```
 
 跟 cost-report 一樣不需要 registry：程式碼放進 ConfigMap，掛進官方 Python 映像檔。
+
+**StorageClass**：`deploy.sh` 會自己找——有預設的就用預設，沒有預設但只有一個就用那一個，
+有多個就要你指定 `STORAGE_CLASS=<名稱>`。這一段是踩過才加的：RKE2 裝了 local-path
+也不一定會標成 default，留空的話 PVC 會一直 Pending，而 rollout 要等到逾時才吐一句
+「no persistent volumes available」，看不出真正的原因。
+**改 StorageClass 要先把舊的 PVC 刪掉**（這個欄位建立後不可變）。
 它跟 cost-report 共用 `cost-report` 這個 namespace，但兩者互不相依，可以只裝其中一個。
 
 需要的權限只有 `pods` 與 `namespaces` 的 `get`/`list`——沒有任何寫入，也不碰 secret。

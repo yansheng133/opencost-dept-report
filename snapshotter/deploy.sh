@@ -17,7 +17,43 @@ if [ $APPLY = 0 ] && ! k get ns "$NS" >/dev/null 2>&1; then
   echo "（namespace ${NS} 還不存在，dry-run 改用用戶端驗證；請先部署 cost-report）"
 fi
 
-k apply --dry-run=$DRY -f "$HERE/k8s.yaml" || exit 1
+# PVC 要的 StorageClass：叢集不一定有預設的，而少了它只會讓 PVC 無聲 Pending，
+# 然後 rollout 等到逾時才吐一個看不出原因的訊息。寧可現在就講清楚。
+SC="${STORAGE_CLASS:-}"
+if [ -z "${SC}" ]; then
+  DEF=$(k get sc -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.metadata.annotations.storageclass\.kubernetes\.io/default-class}{"\n"}{end}' 2>/dev/null | awk -F'\t' '$2=="true"{print $1; exit}')
+  if [ -n "${DEF}" ]; then
+    echo "StorageClass：使用叢集預設的 ${DEF}"
+  else
+    ALL=$(k get sc -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)
+    N=$(printf '%s' "${ALL}" | wc -w | tr -d ' ')
+    if [ "${N}" = 1 ]; then
+      SC="${ALL}"
+      echo "StorageClass：叢集沒有預設的，只有 ${SC} 一個，就用它"
+    else
+      echo "錯誤：叢集沒有預設 StorageClass，請指定 STORAGE_CLASS=<名稱>" >&2
+      echo "      可用的有：${ALL:-（一個都沒有，要先裝 provisioner）}" >&2
+      exit 1
+    fi
+  fi
+else
+  echo "StorageClass：使用指定的 ${SC}"
+fi
+
+MANIFEST="$HERE/k8s.yaml"
+if [ -n "${SC}" ]; then
+  MANIFEST=$(mktemp -t snapshotter-k8s)
+  trap 'rm -f "${MANIFEST}"' EXIT
+  SC="${SC}" python3 - "$HERE/k8s.yaml" > "${MANIFEST}" <<'PYEOF'
+import os, sys
+src = open(sys.argv[1]).read()
+anchor = "  resources: {requests: {storage: 1Gi}}"
+assert anchor in src, "k8s.yaml 的 PVC 區塊長得跟預期不一樣，不要盲目改寫"
+print(src.replace(anchor, anchor + f"\n  storageClassName: {os.environ['SC']}", 1), end="")
+PYEOF
+fi
+
+k apply --dry-run=$DRY -f "${MANIFEST}" || exit 1
 k create configmap cost-snapshotter-code -n "$NS" \
     --from-file="$HERE/snapshot.py" \
     --dry-run=client -o yaml | k apply --dry-run=$DRY -f - || exit 1

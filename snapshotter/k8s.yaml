@@ -34,7 +34,10 @@ metadata:
 spec:
   accessModes: [ReadWriteOnce]
   resources: {requests: {storage: 1Gi}}
-  # storageClassName: 留空用叢集預設。實測 5 分鐘一次、40 個 Pod 約每天 2 MiB
+  # storageClassName 由 deploy.sh 填：有預設 StorageClass 就留空，否則要指定。
+  # RKE2 裝了 local-path 也不一定會被標成 default——留空的話 PVC 會一直 Pending，
+  # 而錯誤訊息（"no persistent volumes available"）看不出真正原因。
+  # 實測每天 1.7 MiB（5 分鐘一次、36 個 Pod），1Gi 夠用 35 天以上。
 ---
 apiVersion: apps/v1
 kind: Deployment
