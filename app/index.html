@@ -254,6 +254,9 @@
   .more { text-align: center; padding: 8px; font-size: 12.5px; color: var(--ink-3);
           background: var(--card); border-top: 1px dashed var(--rule); cursor: pointer; }
   .more:hover { color: var(--accent); }
+  /* 樣本太短時把月推估整欄變淡：它跟可靠的數字長得一樣，才是危險的地方 */
+  body.thin-sample table td:last-child,
+  body.thin-sample table th:last-child { color: var(--ink-3); font-style: italic; }
 </style>
 
 <div class="shell">
@@ -292,11 +295,11 @@
   <section>
     <div class="totals">
       <div><span class="k">期間總成本</span><span class="v num" id="t-total"></span><span class="s">全叢集，含閒置與未標籤</span></div>
-      <div><span class="k">三個部門合計</span><span class="v num" id="t-dept"></span><span class="s" id="t-dept-sub"></span></div>
+      <div><span class="k" id="t-dept-k">部門合計</span><span class="v num" id="t-dept"></span><span class="s" id="t-dept-sub"></span></div>
       <div><span class="k">閒置（無人使用的餘裕）</span><span class="v num" id="t-idle"></span><span class="s" id="t-idle-sub"></span></div>
       <div><span class="k">無法分攤</span><span class="v num" id="t-unalloc"></span><span class="s" id="t-unalloc-sub"></span></div>
     </div>
-    <p class="small muted">金額單位是<strong>成本單位</strong>，不是真實幣別：本環境使用示意單價（見最後一節）。樣本長度 <span class="num" id="m-minutes"></span> 分鐘，月推估 = 樣本 × <span class="num" id="m-factor"></span>（換算成 30 天）。</p>
+    <p class="small muted">金額單位是<strong>成本單位</strong>，不是真實幣別：本環境使用示意單價（見最後一節）。樣本長度 <span class="num" id="m-minutes"></span> 分鐘，月推估 = 樣本 × <span class="num" id="m-factor"></span>（換算成 30 天）。<span id="m-thin"></span></p>
   </section>
 
   <section id="dept" data-nav="部門分攤">
@@ -468,6 +471,8 @@ const NAME = { mfg: "製造部", rd: "研發部", it: "資訊部" };
 const COLOR_VARS = ["--mfg", "--rd", "--it"];
 let DATA = null, MONTH = 1, COLOR = {}, deptFilter = "all";
 
+// 樣本短於兩小時就算「薄」：此時月推估的外推倍數超過 360，誤差會被放得很大。
+const THIN = () => MONTH > 360;
 const n4 = v => Number(v ?? 0).toFixed(4);
 const n2 = v => Number(v ?? 0).toFixed(2);
 const pct = v => (Number(v ?? 0) * 100).toFixed(1) + "%";
@@ -549,8 +554,14 @@ function renderDept() {
   tf.append(trf);
 
   document.getElementById("t-dept").textContent = n4(deptSum);
+  // 標題要跟著篩選與實際部門數走。寫死「三個部門合計」的話，只看單一部門時
+  // 卡片上會出現「三個部門合計 = 17.61」配上「製造部 佔 12.8%」，自己打自己。
+  const n = DATA.depts.length;
+  const who = deptFilter === "all" ? `${n} 個部門` : dname(deptFilter);
+  document.getElementById("t-dept-k").textContent =
+    deptFilter === "all" ? `${n} 個部門合計` : `${dname(deptFilter)}小計`;
   document.getElementById("t-dept-sub").textContent =
-    (deptFilter === "all" ? "三個部門" : dname(deptFilter)) + ` 佔總成本 ${pct(deptSum / DATA.total)}`;
+    `${who} 佔總成本 ${pct(deptSum / DATA.total)}`;
   document.getElementById("t-idle").textContent = shared ? "已分攤" : n4(DATA.idle);
   document.getElementById("t-idle-sub").textContent = shared ? "按各項成本比例攤入" : `佔總成本 ${pct(DATA.idle / DATA.total)}`;
   document.getElementById("t-unalloc").textContent = n4(unalloc);
@@ -646,9 +657,13 @@ function renderRates() {
   const mark = k => {
     const c = chk[k];
     if (!c || c.status === "unknown") return "";
-    return c.status === "ok"
-      ? ' <span class="muted small">✓ 與系統一致</span>'
-      : ` <span class="basis-pill">✗ 系統實際用 ${c.implied}</span>`;
+    if (c.status === "ok") return ' <span class="muted small">✓ 與系統一致</span>';
+    if (c.status === "minor") {
+      // 差異是真的，但這項佔的錢太少。講清楚「影響多少」比只說「不一致」有用。
+      return ` <span class="muted small">系統實際用 ${c.implied}，差 ${c.driftPct}%`
+        + `（只佔本期 ${c.costShare}%，影響約 ${c.impactPct}%）</span>`;
+    }
+    return ` <span class="basis-pill">✗ 系統實際用 ${c.implied}</span>`;
   };
   [["CPU", DATA.rates.cpu, "每 vCPU 小時", sum("cpuCoreHours").toFixed(4) + " 核時", sum("cpu")],
    ["記憶體", DATA.rates.ram, "每 GiB 小時", sum("ramGiBHours").toFixed(4) + " GiB 時", sum("ram")],
@@ -742,16 +757,20 @@ function renderLadder() {
   const steps = [
     { t: "一、看得到成本", c: "叢集層級的花費有人在算。", done: DATA.total > 0,
       next: "先把 OpenCost 與 Prometheus 裝起來。" },
-    { t: "二、分得出部門", c: `工作負載有部門標籤，成本找得到歸屬。目前無法分攤 ${n2(unallocPct)}%。`,
-      done: unallocPct <= 20,
+    // 每一階都要求「有資料」：沒有成本的叢集，無法分攤是 0/0 = 0%，
+    // 看起來像標籤治理做得完美，實際上是什麼都還沒開始。
+    { t: "二、分得出部門", c: DATA.total > 0
+        ? `工作負載有部門標籤，成本找得到歸屬。目前無法分攤 ${n2(unallocPct)}%。`
+        : "本期沒有任何成本資料，無從判斷標籤覆蓋。",
+      done: DATA.total > 0 && unallocPct <= 20,
       next: `把未標籤的 namespace 標上 cost-center，把這個數字壓到 20% 以下（見第七節）。` },
     { t: "三、數字可信", c: `量測覆蓋率 ${cov.pct === undefined ? "—" : cov.pct + "%"}、`
         + `對帳差異 ${rec.driftPct === null || rec.driftPct === undefined ? "—" : rec.driftPct + "%"}、`
         + `單價${rateOk ? "與系統一致" : "尚未對齊"}。`,
-      done: (cov.pct || 0) >= 99 && rec.status === "ok" && rateOk,
+      done: DATA.total > 0 && (cov.pct || 0) >= 99 && rec.status === "ok" && rateOk,
       next: "先補監控缺口與對帳差異，數字站不住就不要開始收錢。" },
     { t: "四、能真的收錢", c: "有版本化的價目表、有帳期封存、推估有標示來源。",
-      done: !!rc.loaded && SEALS.length > 0,
+      done: DATA.total > 0 && !!rc.loaded && SEALS.length > 0,
       next: "把價目表納入版控、每天封存帳期，帳單才追溯得回去。" },
   ];
   // 前一階沒完成，後面就算條件湊巧成立也不該算數——但要誠實說明是「被卡住」
@@ -898,6 +917,14 @@ function renderActions() {
       + `。在這些處理完之前，建議先跑 showback（只給看、不收錢），`
       + `讓各部門自己去對、去修標籤，數字被信任了再切到真的分帳。`]);
   }
+  if (!DATA.total) {
+    // 空叢集最可能是「剛裝好」或「查錯區間」，而不是「沒事做」。
+    acts.length = 0;
+    acts.push(["先確認成本資料有進來",
+      "本期完全沒有成本數字。可能是 OpenCost 還沒開始累積、查詢區間落在有資料之前、"
+      + "或者 OpenCost 連不上 Prometheus。<b>在這之前下面所有的百分比都沒有意義</b>——"
+      + "分母是零的時候，任何比例看起來都會是完美的。"]);
+  }
   if (!acts.length) acts.push(["目前沒有明顯待辦",
     "標籤覆蓋、資料完整度、對帳都在合理範圍。接下來可以把重心放在單位經濟學——每筆訂單、每個客戶的成本。"]);
   acts.forEach(([t, d], i) => {
@@ -919,6 +946,16 @@ function renderMeta() {
     `${w.start || "—"} → ${w.end || "—"}`;
   document.getElementById("m-minutes").textContent = w.minutes;
   document.getElementById("m-factor").textContent = MONTH.toFixed(1);
+  // 樣本只有幾分鐘的時候，月推估是好幾千倍的外推——數字沒算錯，但它跟
+  // 一份可靠的數字長得一模一樣，很容易被直接引用出去。這裡講明白。
+  const thin = document.getElementById("m-thin");
+  if (thin) {
+    thin.innerHTML = THIN()
+      ? ` <b style="color:var(--warn)">樣本只有 ${w.minutes} 分鐘，月推估是 ${MONTH.toFixed(0)} 倍外推，`
+        + `只能看比例、不要當成預算數字。</b>`
+      : "";
+  }
+  document.body.classList.toggle("thin-sample", THIN());
   document.getElementById("t-total").textContent = n4(DATA.total);
   document.getElementById("f-window").textContent = `${w.start} → ${w.end}（${w.minutes} 分鐘，查詢 ${w.query}）`;
   const fresh = document.getElementById("m-fresh");
@@ -1108,6 +1145,17 @@ async function load(win) {
   } catch (e) {
     document.getElementById("m-fresh").textContent = "讀取失敗：" + e.message;
     document.getElementById("m-fresh").style.color = "var(--warn)";
+    // 讀不到資料時，下面會是一整頁空表格——只在頂部放一行小字不夠，
+    // 看起來會像「這個叢集沒花錢」而不是「報表壞了」。
+    const cov = document.getElementById("cov");
+    if (cov) {
+      cov.className = "cov on";
+      cov.innerHTML = `<b>讀不到成本資料</b>：${esc(e.message)}。`
+        + `下面的數字全部是空的，<b>不代表成本是零</b>。`
+        + `請檢查 cost-report 連不連得到 OpenCost（OPENCOST_URL），以及 OpenCost 本身是否正常。`;
+    }
+    // 導覽仍然要能用，至少讓人跳到「計價依據」看設定
+    enhanceSections(); buildToc();
   }
 }
 

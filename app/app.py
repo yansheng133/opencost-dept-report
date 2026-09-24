@@ -437,10 +437,18 @@ def build_report(window):
 
     assets, assets_by_type = assets_total(window)
     recon = billing.reconcile(total, assets)
-    rate_status = billing.rate_check(version, implied_rates) if version else {}
+    # 把「每項資源佔總成本多少」一起帶進去：金額太小的項目，反推單價本來就不準，
+    # 不該讓它擋住整張帳單（實測兩分鐘的區間裡儲存只花 0.0001，誤差 5.6%）。
+    cost_by_res = {}
+    for key, col in (("cpu", "cpuCost"), ("ram", "ramCost"), ("storage", "pvCost")):
+        cost_by_res[key] = sum(float(v.get(col) or 0) for k, v in by_cc.items()
+                               if not k.startswith("__"))
+    res_sum = sum(cost_by_res.values())
+    share = {k: (v / res_sum if res_sum else None) for k, v in cost_by_res.items()}
+    rate_status = billing.rate_check(version, implied_rates, share) if version else {}
     unalloc_pct = _round((unalloc_sep + est_unalloc) / total * 100, 2) if total else 0.0
     gate = billing.billing_gate((cov or {}).get("pct"), estimated_pct, recon,
-                                rate_status, unalloc_pct)
+                                rate_status, unalloc_pct, has_data=total > 0)
 
     return {
         "window": {

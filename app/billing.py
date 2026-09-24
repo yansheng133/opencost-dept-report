@@ -73,12 +73,24 @@ def rate_at(card, when_iso):
     return chosen
 
 
-def rate_check(configured, implied, tolerance_pct=0.5):
+# 一項資源佔總成本低於這個比例時，就算它的單價對不上，對帳單的影響也小到
+# 不值得擋帳。單位是比例（0.01 = 1%）。
+MATERIAL_SHARE = 0.01
+
+
+def rate_check(configured, implied, cost_share=None, tolerance_pct=0.5):
     """比對「價目表寫的單價」與「OpenCost 實際在用的單價」。
 
     這兩個不一致代表有人只改了其中一邊——帳單會跟系統對不起來，而且不會有任何
     錯誤訊息。這是最容易發生、也最難事後追查的一種帳務錯誤，所以要當成出帳的
     硬性條件檢查，不是參考資訊。
+
+    但是「反推單價」在金額很小的時候不可靠：查一個兩分鐘的區間時，儲存可能只花了
+    0.0001，用這麼小的分母去除會得到 5% 以上的誤差——而那項只佔本期成本的 0.15%。
+    拿它去擋整張帳單是假警報，而**假的「帳單不能發」比沒有這個檢查更傷信任**。
+
+    所以帶入 cost_share（每項資源佔總成本的比例）：占比太小的項目照樣回報差異，
+    但標成 minor 而不是 mismatch。原則是**資料薄到撐不起結論時就不要下結論**。
     """
     out = {}
     for key in ("cpu", "ram", "storage"):
@@ -87,11 +99,20 @@ def rate_check(configured, implied, tolerance_pct=0.5):
             out[key] = {"configured": c, "implied": i, "status": "unknown"}
             continue
         drift = abs(c - i) / i * 100 if i else (0.0 if c == 0 else 100.0)
-        out[key] = {
-            "configured": round(c, 6), "implied": round(i, 6),
-            "driftPct": round(drift, 3),
-            "status": "ok" if drift <= tolerance_pct else "mismatch",
-        }
+        share = (cost_share or {}).get(key)
+        row = {"configured": round(c, 6), "implied": round(i, 6),
+               "driftPct": round(drift, 3)}
+        if share is not None:
+            row["costShare"] = round(share * 100, 3)
+        if drift <= tolerance_pct:
+            row["status"] = "ok"
+        elif share is not None and share < MATERIAL_SHARE:
+            # 差異是真的，但這項資源佔的錢太少，影響不到帳單
+            row["status"] = "minor"
+            row["impactPct"] = round(drift * share, 4)
+        else:
+            row["status"] = "mismatch"
+        out[key] = row
     return out
 
 
@@ -126,7 +147,8 @@ def _grade(value, ok, mark, higher_is_better=True):
     return "ok" if value <= ok else ("mark" if value <= mark else "block")
 
 
-def billing_gate(coverage_pct, estimated_pct, recon, rates, unallocated_pct, thresholds=None):
+def billing_gate(coverage_pct, estimated_pct, recon, rates, unallocated_pct,
+                 thresholds=None, has_data=True):
     """這份數字可不可以拿去收錢？
 
     回傳三種結論：
@@ -140,6 +162,19 @@ def billing_gate(coverage_pct, estimated_pct, recon, rates, unallocated_pct, thr
     t = dict(DEFAULT_THRESHOLDS)
     t.update(thresholds or {})
     checks = []
+
+    # 這一項要排在最前面：**沒有資料的時候，下面每一項都會因為分母是零而看起來完美。**
+    # 覆蓋率 100%、推估 0%、無法分攤 0%、對帳差 0——然後系統告訴你可以出帳。
+    # 剛裝好還沒貼標籤的叢集就是這個狀態，而那正是最不該說「一切正常」的時候。
+    checks.append({
+        "name": "本期有成本資料嗎",
+        "value": None,
+        "unit": "",
+        "status": "ok" if has_data else "block",
+        "detail": "有" if has_data else "本期完全沒有成本資料——先確認 OpenCost 有沒有在算，以及查詢區間對不對",
+        "policy": "沒有資料就不能出帳，也不能說「一切正常」",
+        "why": "分母是零的時候，其他每一項檢查都會看起來完美。這是最危險的一種假訊號。",
+    })
 
     checks.append({
         "name": "量測覆蓋率",
@@ -166,12 +201,25 @@ def billing_gate(coverage_pct, estimated_pct, recon, rates, unallocated_pct, thr
         "why": "對不上代表有成本沒被分攤，或被重複計算。對不上的帳單沒人會付。",
     })
     bad = [k for k, v in (rates or {}).items() if v.get("status") == "mismatch"]
+    minor = [(k, v) for k, v in (rates or {}).items() if v.get("status") == "minor"]
+    if bad:
+        rate_status, detail = "block", "不一致：" + "、".join(bad)
+    elif minor:
+        rate_status = "mark"
+        detail = "；".join(
+            f"{k} 單價差 {v['driftPct']}%，但只佔本期成本 {v.get('costShare')}%"
+            f"（對帳單的影響約 {v.get('impactPct')}%），不擋帳"
+            for k, v in minor)
+    elif not rates:
+        rate_status, detail = "unknown", "沒有價目表，單價是反推的"
+    else:
+        rate_status, detail = "ok", "價目表與系統實際使用的單價相符"
     checks.append({
         "name": "單價一致性",
         "value": None,
         "unit": "",
-        "status": "block" if bad else ("unknown" if not rates else "ok"),
-        "detail": ("不一致：" + "、".join(bad)) if bad else "價目表與系統實際使用的單價相符",
+        "status": rate_status,
+        "detail": detail,
         "policy": "價目表寫的單價，必須等於系統實際計價用的單價",
         "why": "只改一邊不會有錯誤訊息，但帳單會跟系統永遠對不起來。",
     })

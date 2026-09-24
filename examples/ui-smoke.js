@@ -133,6 +133,72 @@ function check(ok, what, detail) {
     await vp.close();
   }
 
+  // ── 互動功能：每一項都是「在預設狀態看起來正常、換個狀態就出錯」的那種 ──
+  const winIds = await page.$$eval('#seg-window input', ns => ns.map(n => n.id.replace("win-", "")));
+  if (winIds.includes("24h")) {
+    await page.click('label:has(#win-24h)');
+    await page.waitForTimeout(3000);
+  }
+
+  // 閒置分攤：畫面宣稱「兩種做法總額完全相同」，那就驗它
+  const totalNow = () => page.evaluate(() => document.getElementById("t-total").textContent);
+  await page.click("label:has(#idle-sep)");
+  await page.waitForTimeout(400);
+  const sepTotal = await totalNow();
+  const sepDetail = await page.evaluate(() =>
+    [...document.querySelectorAll("#tbl-dept tr")].map(r => r.lastElementChild.textContent).join("|"));
+  await page.click("label:has(#idle-shr)");
+  await page.waitForTimeout(400);
+  const shrTotal = await totalNow();
+  const shrDetail = await page.evaluate(() =>
+    [...document.querySelectorAll("#tbl-dept tr")].map(r => r.lastElementChild.textContent).join("|"));
+  check(sepTotal === shrTotal, "閒置獨立列帳 vs 按比例分攤：總額相同（畫面就是這樣宣稱的）",
+        `${sepTotal} vs ${shrTotal}`);
+  check(sepDetail !== shrDetail, "但各部門的金額要跟著變", sepDetail);
+  await page.click("label:has(#idle-sep)");
+  await page.waitForTimeout(300);
+
+  // 部門篩選不可以影響「全叢集」的判斷
+  const clusterWide = () => page.evaluate(() => ({
+    total: document.getElementById("t-total").textContent,
+    gate: document.getElementById("g-tag").textContent,
+    unalloc: document.getElementById("t-unalloc").textContent,
+  }));
+  const before = await clusterWide();
+  const deptIds = await page.$$eval("#seg-dept input", ns => ns.map(n => n.id));
+  if (deptIds.length > 1) {
+    await page.click(`label:has(#${deptIds[1]})`);
+    await page.waitForTimeout(500);
+    const after = await clusterWide();
+    check(JSON.stringify(before) === JSON.stringify(after),
+          "選單一部門時，總成本／出帳結論／無法分攤仍是全叢集的數字",
+          JSON.stringify(before) + " vs " + JSON.stringify(after));
+    const title = await page.evaluate(() => document.getElementById("t-dept-k").textContent);
+    check(!title.includes("個部門合計"),
+          "選單一部門時，卡片標題要跟著變（不可以還寫「N 個部門合計」）", title);
+    await page.click("label:has(#dept-all)");
+    await page.waitForTimeout(400);
+  }
+
+  // 短樣本的月推估要標成不可靠——數字沒算錯，但它跟可靠的數字長得一樣
+  if (winIds.includes("1h")) {
+    await page.click("label:has(#win-1h)");
+    await page.waitForTimeout(3000);
+    const thin = await page.evaluate(() => ({
+      minutes: parseFloat(document.getElementById("m-minutes").textContent),
+      warn: document.getElementById("m-thin").textContent.trim(),
+      muted: document.body.classList.contains("thin-sample"),
+    }));
+    if (thin.minutes < 120) {
+      check(thin.warn.length > 0 && thin.muted,
+            `樣本只有 ${thin.minutes} 分鐘時，月推估要標成不可靠`, JSON.stringify(thin));
+    } else {
+      console.log(`SKIP  短樣本警告（這次的 1h 區間有 ${thin.minutes} 分鐘，不算短）`);
+    }
+    await page.click("label:has(#win-24h)");
+    await page.waitForTimeout(3000);
+  }
+
   check(errors.length === 0, "沒有 JavaScript 錯誤", errors.join(" | "));
   check(warnings.length === 0, "沒有觸發收合的安全網（有的話代表版面結構壞了）", warnings.join(" | "));
 

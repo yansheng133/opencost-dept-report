@@ -98,6 +98,27 @@ ok(rc2["cpu"]["status"] == "mismatch", "單價對不上要抓出來", rc2)
 ok(billing.rate_check({"cpu": 1.0}, {"cpu": None})["cpu"]["status"] == "unknown",
    "反推不出單價時是 unknown，不可以當成相符")
 
+# 金額太小的項目：差異照報，但不該擋帳。
+# 實機情境：查兩分鐘的區間時儲存只花了 0.0001，反推單價誤差 5.6%，
+# 但它只佔本期成本的 0.15%——拿它擋整張帳單是假警報。
+rc3 = billing.rate_check({"cpu": 1.0, "storage": 0.001},
+                         {"cpu": 1.0, "storage": 0.000947},
+                         {"cpu": 0.9985, "storage": 0.0015})
+ok(rc3["storage"]["status"] == "minor", "占比極小的單價差異標成 minor 不是 mismatch", rc3["storage"])
+ok(rc3["storage"]["impactPct"] < 0.01, "並且算出它對帳單的實際影響", rc3["storage"])
+ok(billing.billing_gate(100.0, 0.0, billing.reconcile(100, 100), rc3, 5.0)["verdict"] == "mark",
+   "只有 minor 時是「需標示」，不是「需核准」")
+
+# 反過來：占比大的項目對不上，一定要擋
+rc4 = billing.rate_check({"cpu": 1.0}, {"cpu": 1.32}, {"cpu": 0.9})
+ok(rc4["cpu"]["status"] == "mismatch", "占比大的單價差異仍然是 mismatch", rc4["cpu"])
+ok(billing.billing_gate(100.0, 0.0, billing.reconcile(100, 100), rc4, 5.0)["verdict"] == "block",
+   "占比大的單價對不上 → 擋帳")
+
+# 沒給占比時維持原本的嚴格判定（呼叫端沒提供資訊就不要自作主張放行）
+ok(billing.rate_check({"cpu": 1.0}, {"cpu": 1.32})["cpu"]["status"] == "mismatch",
+   "沒有占比資訊時不放寬")
+
 # ── 對帳 ──────────────────────────────────────────────────────────────────
 ok(billing.reconcile(100.0, 100.2)["status"] == "ok", "差 0.2% 算正常")
 ok(billing.reconcile(100.0, 101.5)["status"] == "mark", "差 1.5% 要標示")
@@ -119,6 +140,14 @@ ok(g4["verdict"] == "block", "單價對不上 → 擋住（帳單會跟系統對
 
 g5 = billing.billing_gate(99.9, 0.0, billing.reconcile(100, 100), rc, 49.9)
 ok(g5["verdict"] == "mark", "無法分攤 49.9% → 提醒但不擋帳", g5["verdict"])
+
+# 空叢集：分母是零時每一項都會看起來完美，但絕對不能說「可以出帳」
+empty = billing.billing_gate(100.0, 0.0, billing.reconcile(0, None), {}, 0.0, has_data=False)
+ok(empty["verdict"] == "block", "完全沒有資料時不可以判定可出帳", empty["verdict"])
+ok(empty["checks"][0]["name"] == "本期有成本資料嗎", "「有沒有資料」要排在所有檢查最前面")
+ok(empty["checks"][0]["status"] == "block", "沒有資料這一項本身要是 block")
+has = billing.billing_gate(99.9, 0.0, billing.reconcile(100, 100), rc, 5.0, has_data=True)
+ok(has["verdict"] == "ok", "有資料且都達標時仍然是可出帳（新檢查不可以誤擋）", has["verdict"])
 
 print(f"\n{sum(R)}/{len(R)} 通過")
 sys.exit(0 if all(R) else 1)
