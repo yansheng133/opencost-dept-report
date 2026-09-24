@@ -5,6 +5,8 @@
 !/LICENSE
 !/README.md
 !/Dockerfile
+!/build-images.sh
+!/snapshotter/Dockerfile
 !/deploy.sh
 !/app/
 !/app/app.py

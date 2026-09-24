@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# 部署宣告量快照器（不需要 registry：程式碼放 ConfigMap，掛進官方 Python 映像檔）
+# 部署宣告量快照器
 # 用法：KCFG=<下游 kubeconfig> bash deploy.sh [--apply]
-#   不加 --apply 只做 dry-run。改了 snapshot.py 重跑即可，會自動重啟 Pod。
+#   IMAGE_TAG=<版本>   換一個映像檔版本（預設用 manifest 裡寫的）
+#   IMAGE=<完整名稱>   直接指定映像檔
+#   不加 --apply 只做 dry-run。改了程式碼要先 ../build-images.sh --push 再部署。
 case "${1:-}" in -h|--help) sed -n '2,5p' "$0"; exit 0 ;; esac
 set -uo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -41,27 +43,33 @@ else
 fi
 
 MANIFEST="$HERE/k8s.yaml"
-if [ -n "${SC}" ]; then
+IMG="${IMAGE:-}"
+if [ -z "${IMG}" ] && [ -n "${IMAGE_TAG:-}" ]; then
+  IMG=$(grep -m1 -oE 'image: [^ ]+' "$HERE/k8s.yaml" | cut -d' ' -f2)
+  IMG="${IMG%:*}:${IMAGE_TAG}"
+fi
+[ -n "${IMG}" ] && echo "映像檔：${IMG}"
+if [ -n "${SC}" ] || [ -n "${IMG}" ]; then
   MANIFEST=$(mktemp -t snapshotter-k8s)
   trap 'rm -f "${MANIFEST}"' EXIT
-  SC="${SC}" python3 - "$HERE/k8s.yaml" > "${MANIFEST}" <<'PYEOF'
-import os, sys
+  SC="${SC}" IMG="${IMG}" python3 - "$HERE/k8s.yaml" > "${MANIFEST}" <<'PYEOF'
+import os, re, sys
 src = open(sys.argv[1]).read()
-anchor = "  resources: {requests: {storage: 1Gi}}"
-assert anchor in src, "k8s.yaml 的 PVC 區塊長得跟預期不一樣，不要盲目改寫"
-print(src.replace(anchor, anchor + f"\n  storageClassName: {os.environ['SC']}", 1), end="")
+sc, img = os.environ.get("SC", ""), os.environ.get("IMG", "")
+if sc:
+    anchor = "  resources: {requests: {storage: 1Gi}}"
+    assert anchor in src, "k8s.yaml 的 PVC 區塊長得跟預期不一樣，不要盲目改寫"
+    src = src.replace(anchor, anchor + f"\n  storageClassName: {sc}", 1)
+if img:
+    src, n = re.subn(r"(\n\s+image: )\S+", lambda m: m.group(1) + img, src, count=1)
+    assert n == 1, "找不到 image 欄位，不要盲目改寫"
+print(src, end="")
 PYEOF
 fi
 
 k apply --dry-run=$DRY -f "${MANIFEST}" || exit 1
-k create configmap cost-snapshotter-code -n "$NS" \
-    --from-file="$HERE/snapshot.py" \
-    --dry-run=client -o yaml | k apply --dry-run=$DRY -f - || exit 1
 
 if [ $APPLY = 1 ]; then
-  sum=$(shasum -a 256 "$HERE/snapshot.py" | cut -c1-12)
-  k -n "$NS" patch deploy cost-snapshotter --type merge \
-    -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"cost-report/code-sha\":\"${sum}\"}}}}}" >/dev/null 2>&1
   k -n "$NS" rollout status deploy/cost-snapshotter --timeout=180s
   echo
   echo "看它有沒有在寫：k -n ${NS} logs deploy/cost-snapshotter --tail=5"

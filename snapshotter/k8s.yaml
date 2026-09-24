@@ -1,6 +1,6 @@
 # 宣告量快照器：Prometheus 掛掉時的第二份分攤依據。
-# 它只讀 API server（pods／namespaces／persistentvolumeclaims），不碰 Prometheus，也不需要 registry
-# （程式碼由 deploy.sh 放進 ConfigMap，掛進官方 Python 映像檔執行）。
+# 它只讀 API server（pods／namespaces／persistentvolumeclaims），不碰 Prometheus。
+# 程式碼在映像檔裡（多架構 amd64／arm64，見 ../build-images.sh）。
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -77,8 +77,8 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: snapshotter
-          image: registry.suse.com/bci/python:3.12
-          command: ["python3", "/app/snapshot.py"]
+          image: docker.io/yansheng133/cost-snapshotter:0.2.0
+          imagePullPolicy: IfNotPresent
           env:
             - {name: OUT_DIR, value: /data}
             - {name: INTERVAL, value: "300"}
@@ -116,10 +116,7 @@ spec:
             readOnlyRootFilesystem: true
             capabilities: {drop: ["ALL"]}
           volumeMounts:
-            - {name: code, mountPath: /app, readOnly: true}
             - {name: data, mountPath: /data}
       volumes:
-        - name: code
-          configMap: {name: cost-snapshotter-code}
         - name: data
           persistentVolumeClaim: {claimName: cost-snapshots}

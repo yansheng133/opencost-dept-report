@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# 部署部門成本分攤報表到叢集（A 版：用 ConfigMap 掛程式碼，不需要 registry）
+# 部署部門成本分攤報表到叢集
 # 用法：KCFG=<下游 kubeconfig> bash deploy.sh [--apply]
-#   不加 --apply 只做 dry-run。更新程式碼後重跑即可，會自動重啟 Pod。
+#   IMAGE_TAG=<版本>   換一個映像檔版本（預設用 manifest 裡寫的）
+#   IMAGE=<完整名稱>   直接指定映像檔，例如自建的 registry
+#   不加 --apply 只做 dry-run。改了程式碼要先 build-images.sh --push 再部署。
 case "${1:-}" in -h|--help) sed -n '2,5p' "$0"; exit 0 ;; esac
 set -uo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -41,33 +43,43 @@ else
 fi
 
 MANIFEST="$HERE/k8s/cost-report.yaml"
-if [ -n "${SC}" ]; then
+IMG="${IMAGE:-}"
+if [ -z "${IMG}" ] && [ -n "${IMAGE_TAG:-}" ]; then
+  IMG=$(grep -m1 -oE 'image: [^ ]+' "$HERE/k8s/cost-report.yaml" | cut -d' ' -f2 | cut -d: -f1-2)
+  IMG="${IMG%:*}:${IMAGE_TAG}"
+fi
+[ -n "${IMG}" ] && echo "映像檔：${IMG}"
+if [ -n "${SC}" ] || [ -n "${IMG}" ]; then
   MANIFEST=$(mktemp -t cost-report-k8s)
   trap 'rm -f "${MANIFEST}"' EXIT
-  SC="${SC}" python3 - "$HERE/k8s/cost-report.yaml" > "${MANIFEST}" <<'PYEOF'
-import os, sys
+  SC="${SC}" IMG="${IMG}" python3 - "$HERE/k8s/cost-report.yaml" > "${MANIFEST}" <<'PYEOF'
+import os, re, sys
 src = open(sys.argv[1]).read()
-anchor = "  resources: {requests: {storage: 1Gi}}"
-assert anchor in src, "PVC 區塊長得跟預期不一樣，不要盲目改寫"
-print(src.replace(anchor, anchor + f"\n  storageClassName: {os.environ['SC']}", 1), end="")
+sc, img = os.environ.get("SC", ""), os.environ.get("IMG", "")
+if sc:
+    anchor = "  resources: {requests: {storage: 1Gi}}"
+    assert anchor in src, "PVC 區塊長得跟預期不一樣，不要盲目改寫"
+    src = src.replace(anchor, anchor + f"\n  storageClassName: {sc}", 1)
+if img:
+    src, n = re.subn(r"(\n\s+image: )\S+", lambda m: m.group(1) + img, src, count=1)
+    assert n == 1, "找不到 image 欄位，不要盲目改寫"
+print(src, end="")
 PYEOF
 fi
 
 k apply --dry-run=$DRY -f "${MANIFEST}" || exit 1
 # ConfigMap 由程式碼產生，不手寫：改了 app.py／index.html 重跑就會更新
-k create configmap cost-report-code -n "$NS" \
-    --from-file="$HERE/app/app.py" --from-file="$HERE/app/billing.py" --from-file="$HERE/app/index.html" \
-    --dry-run=client -o yaml | k apply --dry-run=$DRY -f - || exit 1
-# 價目表獨立一個 ConfigMap：單價是政策不是程式，改價的人跟改程式的人通常不是同一個
+# 價目表仍然走 ConfigMap：單價是政策不是程式，改價的人跟改程式的人通常不是同一個，
+# 而且改價不該需要重新建置映像檔。
 k create configmap cost-report-ratecard -n "$NS" \
     --from-file="$HERE/app/ratecard.json" \
     --dry-run=client -o yaml | k apply --dry-run=$DRY -f - || exit 1
 
 if [ $APPLY = 1 ]; then
-  # 內容變了要讓 Pod 重新掛載：用註記觸發滾動更新
-  sum=$(cat "$HERE/app/app.py" "$HERE/app/billing.py" "$HERE/app/index.html" "$HERE/app/ratecard.json" | shasum -a 256 | cut -c1-12)
+  # 價目表改了也要讓 Pod 重新讀：ConfigMap 內容變動不會自己觸發滾動更新
+  sum=$(shasum -a 256 "$HERE/app/ratecard.json" | cut -c1-12)
   k -n "$NS" patch deploy cost-report --type merge \
-    -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"cost-report/code-sha\":\"$sum\"}}}}}" >/dev/null 2>&1
+    -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"cost-report/ratecard-sha\":\"$sum\"}}}}}" >/dev/null 2>&1
   k -n "$NS" rollout status deploy/cost-report --timeout=120s
   echo
   echo "存取方式："

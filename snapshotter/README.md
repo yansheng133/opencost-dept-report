@@ -19,7 +19,8 @@ KCFG=<kubeconfig> bash deploy.sh           # 先看會做什麼（dry-run）
 KCFG=<kubeconfig> bash deploy.sh --apply
 ```
 
-跟 cost-report 一樣不需要 registry：程式碼放進 ConfigMap，掛進官方 Python 映像檔。
+程式碼在映像檔 `docker.io/yansheng133/cost-snapshotter:0.2.0` 裡（amd64／arm64）。
+要自己建置就跑 `bash ../build-images.sh --push`。
 
 **StorageClass**：`deploy.sh` 會自己找——有預設的就用預設，沒有預設但只有一個就用那一個，
 有多個就要你指定 `STORAGE_CLASS=<名稱>`。這一段是踩過才加的：RKE2 裝了 local-path
@@ -43,6 +44,8 @@ deploy.sh 還會建一個 `cost-snapshotter` Service（80 → 8080），給查�
 ```bash
 OUT_DIR=./snapshots python3 snapshot.py --once --kubectl <kubeconfig 路徑>
 ```
+
+（這支程式只用標準函式庫，所以本機直接 `python3` 跑得起來，不必先建置映像檔。）
 
 欄位跟叢集內模式完全一樣，所以本機收的快照可以跟正式的混著算。
 

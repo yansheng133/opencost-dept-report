@@ -64,7 +64,7 @@ JSON。只讀 API server（pods、namespaces、persistentvolumeclaims，`get`/`l
 實測每份快照 6 KiB（36 個 Pod）：5 分鐘一次是**每天 1.7 MiB**，保留 35 天約 59 MiB。
 資源用量 CPU 10m、記憶體 64Mi 以下。
 
-部署上唯一要注意的是 StorageClass：`deploy.sh` 會自動挑，但叢集沒有預設的時候要指定。
+部署上要注意的是 StorageClass：`deploy.sh` 會自動挑，但叢集沒有預設的時候要指定。
 RKE2 裝了 local-path 也不一定會標成 default，而留空的症狀是 PVC 無聲 Pending、
 rollout 逾時後吐一句看不出原因的錯——所以這個檢查放在部署前，不是讓它跑到逾時。
 

@@ -67,25 +67,40 @@ OpenCost 自己的 UI 是給平台團隊看的：它按 namespace 和工作負�
 
 ## 部署
 
-### A. 還沒有 registry（預設，不必建置映像檔）
-
-程式碼放進 ConfigMap，掛進官方 Python 映像檔執行。
+映像檔是多架構的（`linux/amd64` ＋ `linux/arm64`），直接部署即可：
 
 ```bash
-KCFG=<kubeconfig 路徑> bash deploy.sh          # 先看會做什麼（dry-run）
-KCFG=<kubeconfig 路徑> bash deploy.sh --apply  # 部署
+KCFG=<kubeconfig 路徑> bash deploy.sh                    # 先看會做什麼（dry-run）
+KCFG=<kubeconfig 路徑> bash deploy.sh --apply            # 部署報表服務
+KCFG=<kubeconfig 路徑> bash snapshotter/deploy.sh --apply # 部署快照器（選用）
 ```
 
-改完 `app/app.py` 或 `app/index.html` 重跑一次即可，腳本會更新 ConfigMap 並觸發滾動更新。
+腳本會自己處理兩件容易踩的事：**選 StorageClass**（叢集不一定有預設的，沒有預設又有多個候選
+就直接拒絕並列出可用的，而不是讓 PVC 無聲 Pending 到 rollout 逾時），以及**建立價目表 ConfigMap**。
 
-### B. 打包成映像檔
+換版本或換成自建的 registry：
 
 ```bash
-docker build -t <registry>/cost-report:0.1.0 .   # 注意目標叢集的架構（arm64／amd64）
-docker push <registry>/cost-report:0.1.0
+IMAGE_TAG=0.2.0 KCFG=… bash deploy.sh --apply
+IMAGE=myregistry.local/cost-report:1.2.3 KCFG=… bash deploy.sh --apply
 ```
 
-然後在 `k8s/cost-report.yaml` 裡換掉 `image`、刪掉 `command`、刪掉 `code` 這個 volume 與它的 volumeMount。
+### 自己建置映像檔
+
+```bash
+bash build-images.sh                 # 只建置不推送，驗證 Dockerfile
+REGISTRY=<你的帳號> bash build-images.sh --push
+```
+
+多架構**一定要用 buildx 的 container driver**：預設的 docker driver 一次只產得出一個架構，
+而且不會明講，只會安靜地推上去一個單架構的映像檔——別人在另一種 CPU 上拉下來才會發現。
+腳本會自己建立 builder，推送完還會把實際的架構列出來給你核對。
+
+### 程式碼為什麼不再放 ConfigMap
+
+早期版本把 `.py` 放進 ConfigMap 掛載執行，好處是不必 registry。但那樣沒有版本、沒有
+不可變性，也沒辦法告訴別人「你跑的是哪一版」。**價目表仍然是 ConfigMap**——單價是政策不是
+程式，改價不該需要重新建置映像檔。
 
 ## 怎麼存取
 
@@ -138,6 +153,17 @@ docker push <registry>/cost-report:0.1.0
 | `app/ratecard.json` | 價目表範例（版本化，含生效日與調整原因） |
 | `app/test_billing.py` | 計價政策的測試，`python3 test_billing.py`，不需要叢集 |
 | `snapshotter/` | 宣告量快照器：只讀 API server 的第二份分攤依據，Prometheus 掛掉時還有數字可用 |
+| `build-images.sh` | 建置並推送兩個多架構映像檔（amd64／arm64） |
+| `Dockerfile`、`snapshotter/Dockerfile` | 兩個服務各自的映像檔定義 |
+
+## 映像檔
+
+| | |
+|---|---|
+| 報表服務 | `docker.io/yansheng133/cost-report:0.2.0` |
+| 快照器 | `docker.io/yansheng133/cost-snapshotter:0.2.0` |
+| 架構 | `linux/amd64`、`linux/arm64` |
+| 基底 | `registry.suse.com/bci/python:3.12`，非 root（UID 1000）執行 |
 
 ## 需求
 

@@ -1,7 +1,6 @@
 # 部門成本分攤報表：在叢集內查 OpenCost、快取後對外提供網頁與 JSON。
-# 程式碼來源有兩種，擇一：
-#   A. 還沒有 registry：用 ConfigMap 掛程式碼 ＋ 官方 Python 映像檔（deploy.sh 預設，不需要建置）
-#   B. 已經打包成映像檔：把 image 換成你的映像檔、拿掉 configmap 掛載與 command
+# 程式碼在映像檔裡（多架構 amd64／arm64，見 build-images.sh）。
+# 只有價目表是掛 ConfigMap 進來的——單價是政策不是程式，改價不該重新建置映像檔。
 ---
 apiVersion: v1
 kind: Namespace
@@ -55,12 +54,8 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: app
-          # ---- A：無 registry 版（deploy.sh 會把程式碼放進 ConfigMap）----
-          image: registry.suse.com/bci/python:3.12
-          command: ["python3", "/app/app.py"]
-          # ---- B：正式映像檔版 ----
-          # image: <你的 registry>/cost-report:0.1.0
-          # 並刪掉上面的 command，以及下方的 code volume 與 volumeMount
+          image: docker.io/yansheng133/cost-report:0.2.0
+          imagePullPolicy: IfNotPresent
           env:
             - name: OPENCOST_URL
               value: http://opencost.opencost.svc.cluster.local:9003
@@ -100,13 +95,10 @@ spec:
             readOnlyRootFilesystem: true
             capabilities: {drop: ["ALL"]}
           volumeMounts:
-            - {name: code, mountPath: /app, readOnly: true}   # B 版請刪掉
             - {name: config, mountPath: /config, readOnly: true}
             - {name: seals, mountPath: /seals}
             - {name: tmp, mountPath: /tmp}
       volumes:
-        - name: code                                           # B 版請刪掉
-          configMap: {name: cost-report-code}
         - name: config                  # 價目表：單價是政策，跟程式碼分開放，改價不必動程式
           configMap: {name: cost-report-ratecard}
         - name: seals                   # 封存的帳期。這是唯一必須持久化的東西——
