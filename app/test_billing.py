@@ -68,12 +68,24 @@ try:
     listed = billing.list_seals(seals)
     ok(len(listed) == 1 and listed[0]["intact"] is True, "列出封存並驗證雜湊完整", listed)
 
+    # 清單要帶出當天的出帳結論。少了這個欄位畫面只會顯示「—」，
+    # 看起來像「那天沒有結論」而不是「程式忘了給」——這種漏法沒有人會發現。
+    billing.seal_day(seals, "2026-09-22", {"totals": {"total": 5.0}, "gate": "block",
+                                           "reconciliation": {"driftPct": -0.02}})
+    row = [x for x in billing.list_seals(seals) if x["day"] == "2026-09-22"][0]
+    ok(row.get("gate") == "block", "封存清單要帶出當天的出帳結論", row)
+    ok(row.get("driftPct") == -0.02, "封存清單要帶出當天的對帳差異", row)
+
     # 直接竄改檔案，驗證 intact 會變 False——這是防竄改唯一真正的證明
     doc = billing.read_seal(seals, "2026-09-23")
     doc["totals"]["total"] = 1.0
     with open(os.path.join(seals, "2026-09-23.json"), "w") as f:
         json.dump(doc, f, ensure_ascii=False, sort_keys=True)
-    ok(billing.list_seals(seals)[0]["intact"] is False, "有人手改過封存檔 → intact 變 False")
+    # 按日期取，不要用位置索引：清單多一筆就會指到別天去（剛剛就踩到了）
+    tampered = [x for x in billing.list_seals(seals) if x["day"] == "2026-09-23"][0]
+    ok(tampered["intact"] is False, "有人手改過封存檔 → intact 變 False", tampered)
+    intact_other = [x for x in billing.list_seals(seals) if x["day"] == "2026-09-22"][0]
+    ok(intact_other["intact"] is True, "沒被改過的那一天仍然是 intact（不可以連坐）", intact_other)
 finally:
     shutil.rmtree(tmpdir, ignore_errors=True)
 

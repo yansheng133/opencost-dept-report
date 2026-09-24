@@ -266,6 +266,8 @@ def list_seals(seal_dir):
             "total": (doc.get("totals") or {}).get("total"),
             "coveragePct": (doc.get("coverage") or {}).get("pct"),
             "estimatedPct": (doc.get("basis") or {}).get("estimatedPct"),
+            "gate": doc.get("gate"),          # 當天封存時的出帳結論，事後不會變
+            "driftPct": (doc.get("reconciliation") or {}).get("driftPct"),
             # 重算一次雜湊：封存的意義在於「事後查得到而且沒被改過」，
             # 只存雜湊不驗證，等於沒有防竄改。
             "intact": stored == content_hash(body),
