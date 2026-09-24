@@ -2,6 +2,7 @@
 # 新增檔案時要自己加一條放行，避免「不小心 commit 進去」。
 /*
 !/.gitignore
+!/.repo-audit-allow
 !/LICENSE
 !/README.md
 !/Dockerfile

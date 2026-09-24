@@ -1,0 +1,4 @@
+# repo-publish-audit 的誤報白名單。
+# 格式：<命中那一行的雜湊>  <為什麼不算外洩>
+# 雜湊來自 repo-audit.sh 的輸出。那一行只要改動一個字，這條就自動失效。
+508e8e262631  k8s/ingress-example.yaml 的 basicAuth secret 是 Kubernetes Secret 的「名稱」cost-report-users，不是密碼值

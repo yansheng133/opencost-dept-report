@@ -75,12 +75,34 @@ build cost-snapshotter "${HERE}/snapshotter"  "${HERE}/snapshotter/Dockerfile"  
 
 echo
 if [ ${PUSH} = 1 ]; then
-  echo "推送完成。驗證實際推上去的架構："
-  for n in cost-report cost-snapshotter; do
-    echo "  ${REGISTRY}/${n}:${VERSION}"
-    docker buildx imagetools inspect "${REGISTRY}/${n}:${VERSION}" 2>/dev/null \
-      | grep -E "Platform|Name:" | sed 's/^/    /'
-  done
+  # 用**未認證**的 registry API 驗證：本機的 imagetools 帶著你的憑證，
+  # 看到的不一定是別人看到的。少一個架構就讓腳本失敗，不要只是印出來。
+  echo "推送完成。用匿名管道驗證外人看到的架構："
+  REQ="${PLATFORMS}" VER="${VERSION}" REG="${REGISTRY}" python3 - <<'PYEOF' || exit 1
+import json, os, sys, urllib.request
+ACCEPT = ("application/vnd.docker.distribution.manifest.list.v2+json, "
+          "application/vnd.oci.image.index.v1+json")
+need = [p.strip() for p in os.environ["REQ"].split(",") if p.strip()]
+bad = 0
+for name in ("cost-report", "cost-snapshotter"):
+    repo = f"{os.environ['REG']}/{name}"
+    ref = f"{repo}:{os.environ['VER']}"
+    try:
+        tok = json.load(urllib.request.urlopen(
+            f"https://auth.docker.io/token?service=registry.docker.io&scope=repository:{repo}:pull"))["token"]
+        r = urllib.request.Request(f"https://registry-1.docker.io/v2/{repo}/manifests/{os.environ['VER']}")
+        r.add_header("Accept", ACCEPT); r.add_header("Authorization", f"Bearer {tok}")
+        m = json.load(urllib.request.urlopen(r, timeout=20))
+        archs = sorted({f"{e['platform']['os']}/{e['platform']['architecture']}"
+                        for e in m.get("manifests", [])
+                        if e.get("platform", {}).get("architecture") != "unknown"})
+    except Exception as e:
+        print(f"    {ref} → 驗證失敗：{e}"); bad += 1; continue
+    missing = [n for n in need if n not in archs]
+    print(f"    {ref} → {', '.join(archs)}" + (f"  ✗ 缺 {'、'.join(missing)}" if missing else "  ✓"))
+    bad += bool(missing)
+sys.exit(1 if bad else 0)
+PYEOF
   echo
   echo "部署：IMAGE_TAG=${VERSION} KCFG=<kubeconfig> bash deploy.sh --apply"
 else
