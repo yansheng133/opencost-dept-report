@@ -192,8 +192,68 @@
   .act .n { display:inline-block; min-width:20px; font-weight:700; color:var(--accent); }
   .act .g { color:var(--ink-3); font-size:12px; }
   .basis-pill { font-size:10.5px; padding:1px 6px; border-radius:3px; background:rgba(180,87,26,.12); color:var(--warn); margin-left:6px; white-space:nowrap; }
+  /* ── 側邊快速連結 ─────────────────────────────────────────────────
+     目錄從 DOM 自己長出來（見 buildToc）。手寫一份清單的話，以後加區塊
+     一定會忘記同步，變成「連結指到不存在的地方」這種最惱人的壞法。 */
+  .shell { display: grid; grid-template-columns: minmax(0, 1fr); }
+  /* 兩個格線陷阱，缺一個手機版就會變成可以橫向拖動的破版：
+     1. 格線項目預設 min-width:auto，會被內部最寬的內容（表格）撐開。
+     2. **項目有 `margin: 0 auto` 時不套用 stretch**，改以 fit-content 計算寬度，
+        於是被撐到 max-width 的 980px。置中交給格線本身做，項目不要留 auto 邊距。 */
+  .shell > * { min-width: 0; }
+  .shell > .wrap { margin-inline: 0; }
+  .toc { font-size: 13px; }
+  .toc ol { list-style: none; margin: 0; padding: 0; }
+  .toc a { display: block; padding: 6px 10px; color: var(--ink-2); text-decoration: none;
+           border-left: 2px solid transparent; border-radius: 0 4px 4px 0; line-height: 1.4; }
+  .toc a:hover { color: var(--ink); background: var(--card); }
+  .toc a.on { color: var(--accent); border-left-color: var(--accent); background: var(--card); font-weight: 600; }
+  .toc .tools { display: flex; gap: 6px; margin-top: 12px; padding: 0 10px; }
+  .toc button { font: inherit; font-size: 11.5px; color: var(--ink-3); background: none;
+                border: 1px solid var(--rule); border-radius: 4px; padding: 3px 7px; cursor: pointer; }
+  .toc button:hover { color: var(--ink); border-color: var(--ink-3); }
+
+  @media (min-width: 1140px) {
+    .shell { grid-template-columns: 190px minmax(0, 980px); justify-content: center; column-gap: 44px; }
+    .toc { position: sticky; top: 24px; align-self: start; padding-block: 52px 0;
+           max-height: calc(100vh - 48px); overflow-y: auto; }
+    .wrap { margin: 0; }
+  }
+  /* 窄螢幕：改成頂部可橫向捲動的一排，不要犧牲掉導覽 */
+  @media (max-width: 1139px) {
+    .toc { position: sticky; top: 0; z-index: 20; background: var(--paper);
+           border-bottom: 1px solid var(--rule-soft); padding: 8px 16px;
+           overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .toc ol { display: flex; gap: 4px; }
+    .toc a { white-space: nowrap; border-left: none; border-bottom: 2px solid transparent; border-radius: 4px; }
+    .toc a.on { border-left: none; border-bottom-color: var(--accent); }
+    .toc .tools { display: none; }
+  }
+
+  /* ── 區塊收合 ── */
+  .head { position: relative; }
+  .h2row { display: flex; align-items: center; gap: 8px; }
+  .fold { font: inherit; font-size: 13px; line-height: 1; color: var(--ink-3); background: none;
+          border: 1px solid var(--rule-soft); cursor: pointer; border-radius: 4px; flex: none;
+          width: 22px; height: 22px; display: grid; place-items: center; }
+  .fold:hover { color: var(--ink); background: var(--rule-soft); }
+  .anchor { font-size: 13px; color: var(--ink-3); text-decoration: none; opacity: 0; transition: opacity .12s; }
+  .h2row:hover .anchor { opacity: 1; }
+  .anchor:hover { color: var(--accent); }
+  section.collapsed > *:not(.head):not(.verdict) { display: none; }
+  section.collapsed .head p, section.collapsed .head .decide { display: none; }
+  section.gate.collapsed .verdict ~ * { display: none; }
+  /* 錨點跳轉時不要被黏著的頂部導覽蓋住標題 */
+  section[id] { scroll-margin-top: 60px; }
+
+  /* ── 過長的表格：先只給前幾列 ── */
+  .more { text-align: center; padding: 8px; font-size: 12.5px; color: var(--ink-3);
+          background: var(--card); border-top: 1px dashed var(--rule); cursor: pointer; }
+  .more:hover { color: var(--accent); }
 </style>
 
+<div class="shell">
+<nav class="toc" id="toc" aria-label="快速連結"></nav>
 <div class="wrap">
   <header class="masthead">
     <div class="eyebrow">Kubernetes 成本分攤 · 依 cost-center 標籤</div>
@@ -212,13 +272,13 @@
 
   <!-- 這一塊是整頁最重要的：客戶通常以為「把成本算出來」就結束了，
        實際上帳單要先通過一組檢查才能發。把檢查攤開來，比給一個漂亮的數字有用。 -->
-  <section class="gate">
+  <section class="gate" id="gate" data-nav="能不能出帳">
     <div class="verdict"><h2>這份數字可以拿去收錢嗎？</h2><span class="tag" id="g-tag">—</span></div>
     <div class="sub" id="g-sub"></div>
     <div class="checks" id="g-checks"></div>
   </section>
 
-  <section>
+  <section id="maturity" data-nav="成熟度">
     <div class="head"><h2>你現在走到哪一階</h2>
       <p>做部門成本分攤不是一次到位的工程。這四階各自要解決不同的問題，<b>跳階不會成功</b>——
          標籤還沒治理好就開始收錢，你會把時間全花在吵數字。</p></div>
@@ -235,7 +295,7 @@
     <p class="small muted">金額單位是<strong>成本單位</strong>，不是真實幣別：本環境使用示意單價（見最後一節）。樣本長度 <span class="num" id="m-minutes"></span> 分鐘，月推估 = 樣本 × <span class="num" id="m-factor"></span>（換算成 30 天）。</p>
   </section>
 
-  <section>
+  <section id="dept" data-nav="部門分攤">
     <div class="sec-head">
       <h2>一、各部門應分攤金額</h2>
       <p class="muted small">閒置成本要不要分攤給部門，是 chargeback 的第一個決定。兩種做法的<strong>總額完全相同</strong>，差別只在誰吸收那塊餘裕。</p>
@@ -278,7 +338,7 @@
     </div>
   </section>
 
-  <section>
+  <section id="env" data-nav="正式/測試">
     <div class="sec-head">
       <h2>二、正式環境 vs 測試環境</h2>
     <div class="decide" style="margin-top:10px"><span class="k">你要做的決定</span>
@@ -290,7 +350,7 @@
     <p class="small muted" id="env-note"></p>
   </section>
 
-  <section>
+  <section id="workloads" data-nav="工作負載">
     <div class="sec-head">
       <h2>三、每個工作負載付了多少、用了多少</h2>
     <div class="decide" style="margin-top:10px"><span class="k">你要做的決定</span>
@@ -310,7 +370,7 @@
     <div class="notes" id="wl-notes"></div>
   </section>
 
-  <section>
+  <section id="unalloc" data-nav="無法分攤">
     <div class="sec-head">
       <h2>四、無法分攤的成本</h2>
     <div class="decide" style="margin-top:10px"><span class="k">你要做的決定</span>
@@ -323,7 +383,7 @@
     <p class="small muted">其中 <strong>shared-tools</strong> 是刻意不加標籤的示範；其餘多為叢集本身的系統元件（kube-system、監控、資安），實務上通常以「平台共用成本」另行分攤，或由平台團隊吸收。</p>
   </section>
 
-  <section>
+  <section id="trust" data-nav="資料可信度">
     <div class="sec-head">
       <h2>五、資料可信度</h2>
       <p class="muted small">成本報表最危險的失敗方式不是壞掉，是<strong>看起來正常但少算了</strong>。這一節把「這些數字是怎麼來的」攤開。</p>
@@ -346,7 +406,7 @@
     </div>
   </section>
 
-  <section>
+  <section id="seals" data-nav="帳期封存">
     <div class="head">
       <h2>六、帳期封存</h2>
       <p class="muted small">每天結帳一次並<strong>凍結</strong>。沒有這一步，「上個月的帳單」會隨著監控資料過期而查不到，甚至每次重查的金額都不一樣。</p>
@@ -362,7 +422,7 @@
     </div>
   </section>
 
-  <section>
+  <section id="next" data-nav="下一步">
     <div class="head">
       <h2>七、下一步該做什麼</h2>
       <p class="muted small">下面是<strong>根據這個叢集的實際資料</strong>算出來的，不是通用建議。</p>
@@ -370,7 +430,7 @@
     <div class="acts" id="acts"></div>
   </section>
 
-  <section>
+  <section id="rates" data-nav="計價依據">
     <div class="head">
       <h2>八、計價依據</h2>
       <p class="muted small">這些單價是<strong>示意值</strong>，用整數方便現場驗算。導入時換成實際的機器成本或雲端帳單即可，計算方式不變。</p>
@@ -397,6 +457,7 @@
 <div id="tip" role="status"></div>
 
 
+</div>
 <script>
 // 資料全部來自同一個服務的 /api/report（後端在叢集內查 OpenCost 並快取）。
 const NAME = { mfg: "製造部", rd: "研發部", it: "資訊部" };
@@ -845,6 +906,7 @@ function renderActions() {
 function renderAll() {
   renderGate(); renderLadder(); renderDept(); renderEnv(); renderWorkloads();
   renderUnalloc(); renderTrust(); renderSeals(); renderActions(); renderRates();
+  enhanceSections(); buildToc(); capAll();
 }
 
 function renderMeta() {
@@ -883,6 +945,135 @@ function renderMeta() {
 
 function esc(t) {
   return String(t).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+// ── 導覽與收合 ────────────────────────────────────────────────────────────
+// 目錄直接從 DOM 長出來：手寫一份清單的話，以後加區塊一定會忘記同步。
+const FOLD_KEY = "cost-report.collapsed";
+function foldState() {
+  // localStorage 在無痕視窗、清過資料的瀏覽器裡可能直接丟例外，
+  // 這只是「記住你上次收了哪幾節」的方便功能，壞掉不該影響任何東西。
+  try { return new Set(JSON.parse(localStorage.getItem(FOLD_KEY) || "[]")); }
+  catch (e) { return new Set(); }
+}
+function saveFold(set) {
+  try { localStorage.setItem(FOLD_KEY, JSON.stringify([...set])); } catch (e) {}
+}
+
+function setFold(sec, on, store) {
+  sec.classList.toggle("collapsed", on);
+  const btn = sec.querySelector(".fold");
+  if (btn) { btn.textContent = on ? "▸" : "▾"; btn.title = on ? "展開這一節" : "收合這一節"; }
+  if (store) { on ? store.add(sec.id) : store.delete(sec.id); }
+}
+
+function enhanceSections() {
+  const folded = foldState();
+  document.querySelectorAll("section[id]").forEach(sec => {
+    const h2 = sec.querySelector("h2");
+    if (!h2 || h2.dataset.done) return;
+    h2.dataset.done = "1";
+    const row = document.createElement("div");
+    row.className = "h2row";
+    h2.parentNode.insertBefore(row, h2);
+    const fold = document.createElement("button");
+    fold.className = "fold"; fold.type = "button"; fold.textContent = "▾";
+    fold.addEventListener("click", () => {
+      const now = !sec.classList.contains("collapsed");
+      const st = foldState(); setFold(sec, now, st); saveFold(st);
+    });
+    const link = document.createElement("a");
+    link.className = "anchor"; link.href = "#" + sec.id; link.textContent = "#";
+    link.title = "這一節的固定連結";
+    row.append(fold, h2, link);
+    if (folded.has(sec.id)) setFold(sec, true, null);
+  });
+}
+
+function buildToc() {
+  const toc = document.getElementById("toc");
+  if (!toc || toc.dataset.done) return;
+  toc.dataset.done = "1";
+  const ol = document.createElement("ol");
+  document.querySelectorAll("section[id][data-nav]").forEach(sec => {
+    const li = document.createElement("li");
+    const a = document.createElement("a");
+    a.href = "#" + sec.id; a.textContent = sec.dataset.nav; a.dataset.for = sec.id;
+    a.addEventListener("click", () => {
+      // 連到一個收合中的區塊只會看到一行標題，像是壞掉了——所以先展開再跳
+      if (sec.classList.contains("collapsed")) {
+        const st = foldState(); setFold(sec, false, st); saveFold(st);
+      }
+    });
+    li.appendChild(a); ol.appendChild(li);
+  });
+  toc.appendChild(ol);
+
+  const tools = document.createElement("div");
+  tools.className = "tools";
+  const mk = (label, on) => {
+    const b = document.createElement("button"); b.type = "button"; b.textContent = label;
+    b.addEventListener("click", () => {
+      const st = foldState();
+      document.querySelectorAll("section[id]").forEach(sec => setFold(sec, on, st));
+      saveFold(st);
+    });
+    return b;
+  };
+  tools.append(mk("全部收合", true), mk("全部展開", false));
+  toc.appendChild(tools);
+
+  // 別人把 .../#seals 這種連結貼給同事時，對方要直接看到內容
+  const openHash = () => {
+    const sec = location.hash && document.querySelector(location.hash);
+    if (sec && sec.classList.contains("collapsed")) {
+      const st = foldState(); setFold(sec, false, st); saveFold(st);
+      sec.scrollIntoView();
+    }
+  };
+  window.addEventListener("hashchange", openHash);
+  openHash();
+
+  // 捲動高亮。用 IntersectionObserver 而不是監聽 scroll：
+  // 後者在長頁面上每次捲動都要算一輪位置，這裡只要知道「誰在畫面上」。
+  const links = [...toc.querySelectorAll("a")];
+  const seen = new Map();
+  const io = new IntersectionObserver(entries => {
+    entries.forEach(e => seen.set(e.target.id, e.isIntersecting ? e.intersectionRatio : 0));
+    let best = null, bestRatio = 0;
+    seen.forEach((r, id) => { if (r > bestRatio) { bestRatio = r; best = id; } });
+    if (best) links.forEach(a => a.classList.toggle("on", a.dataset.for === best));
+  }, { rootMargin: "-56px 0px -55% 0px", threshold: [0, .25, .5, 1] });
+  document.querySelectorAll("section[id]").forEach(sec => io.observe(sec));
+}
+
+// 過長的表格先只顯示前幾列。整份報表的價值在於「一眼看完」，
+// 一個 40 列的工作負載表會把下面的區塊全部推到看不見的地方。
+function capTable(tbodyId, limit, noun) {
+  const tb = document.getElementById(tbodyId);
+  if (!tb) return;
+  tb.querySelectorAll("tr.more-row").forEach(r => r.remove());
+  const rows = [...tb.querySelectorAll("tr")];
+  if (rows.length <= limit + 1) return;          // 只多一列就不值得收
+  const cols = rows[0].children.length || 1;
+  let open = false;
+  const bar = document.createElement("tr");
+  bar.className = "more-row";
+  const td = document.createElement("td");
+  td.className = "more"; td.colSpan = cols;
+  bar.appendChild(td); tb.appendChild(bar);
+  const apply = () => {
+    rows.forEach((r, i) => { r.style.display = (open || i < limit) ? "" : "none"; });
+    td.textContent = open ? "收合" : `顯示其餘 ${rows.length - limit} ${noun || "列"}`;
+  };
+  td.addEventListener("click", () => { open = !open; apply(); });
+  apply();
+}
+
+function capAll() {
+  capTable("tbl-wl", 8, "個工作負載");
+  capTable("tbl-targets", 5, "個抓取工作");
+  capTable("tbl-seals", 7, "個帳期");
 }
 
 async function load(win) {
