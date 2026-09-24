@@ -56,6 +56,9 @@ SNAPSHOTTER_URL = os.environ.get(
 SEAL_DIR = os.environ.get("SEAL_DIR", "/seals")
 SEAL_ENABLED = os.environ.get("SEAL_ENABLED", "1") != "0"
 SEAL_WINDOW = os.environ.get("SEAL_WINDOW", "24h")   # 封存用的區間長度（整天）
+# 使用率折線圖的取樣間隔。點太密會看不出趨勢，太疏會把日夜曲線抹平。
+STEPS = dict(kv.split("=", 1) for kv in
+             os.environ.get("SERIES_STEPS", "1h=5m,24h=1h,7d=6h").split(",") if "=" in kv)
 
 DEPT_KEYS = ("mfg", "rd", "it")          # 只是預設順序；實際部門以資料為準
 SYSTEM_NS = [p.strip() for p in os.environ.get(
@@ -320,6 +323,85 @@ def declared_fill(gaps, rates):
     }
 
 
+def usage_series(window):
+    """各部門的使用率隨時間變化。
+
+    使用率 = 實際用量 ÷ 申請量。這跟帳單金額是兩回事：金額看的是「付了多少」，
+    使用率看的是「申請的東西有沒有在用」。一個部門可以金額很低但使用率也很低——
+    那代表它申請的不多，但申請的那點也沒在用。
+
+    **沒有資料的區段要讓折線斷開，不可以內插。** 把兩個相隔三天的點連起來，
+    中間那條線看起來跟真的量到一樣，而那三天可能是監控掛掉。
+    """
+    step = STEPS.get(window)
+    if not step:
+        return None
+    try:
+        params = {"window": window, "aggregate": "label:cost-center",
+                  "accumulate": "false", "step": step}
+        url = f"{OPENCOST_URL}/allocation/compute?{urllib.parse.urlencode(params)}"
+        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as r:
+            body = json.load(r)
+        segments = body.get("data")
+        if not isinstance(segments, list):
+            return None
+    except (urllib.error.URLError, OSError, ValueError, KeyError) as e:
+        print(f"[warn] 讀不到使用率序列：{e}", flush=True)
+        return None
+
+    step_min = {"m": 1, "h": 60, "d": 1440}.get(step[-1], 60) * int(step[:-1] or 1)
+
+    # 空的區段沒有 start 欄位，但每一段的長度是固定的，所以可以從
+    # 「第一個有資料的區段」往前後推算出來。有時間戳才放得上時間軸。
+    base_idx, base_ts = None, None
+    for i, seg in enumerate(segments):
+        row = next((v for k, v in (seg or {}).items() if v and not k.startswith("__")), None)
+        if row and row.get("start"):
+            try:
+                base_idx, base_ts = i, _parse_iso(row["start"])
+                break
+            except ValueError:
+                continue
+    if base_ts is None:
+        return None
+
+    def seg_start(i):
+        return time.strftime("%Y-%m-%dT%H:%M:%SZ",
+                             time.gmtime(base_ts + (i - base_idx) * step_min * 60))
+
+    points, covered = [], 0
+    for idx, seg in enumerate(segments):
+        rows = {k: v for k, v in (seg or {}).items() if v and not k.startswith("__")}
+        any_row = next(iter(rows.values()), {}) if rows else {}
+        minutes = float(any_row.get("minutes") or 0)
+        # 沒有資料的區段**也要放進序列**，只是 depts 給 None。
+        # 把它們濾掉的話，前端會把剩下的點均勻攤開——於是 6 小時的間隔
+        # 跟 3 天的間隔在圖上長得一模一樣，X 軸就開始說謊了。
+        # 區間邊緣常有只涵蓋幾分鐘的碎片，當成完整一格會變成不存在的尖點，一樣當作沒有。
+        if not rows or minutes < step_min * 0.25:
+            points.append({"start": seg_start(idx), "depts": None})
+            continue
+        covered += 1
+        depts = {}
+        for dept, v in rows.items():
+            req_cpu = float(v.get("cpuCoreRequestAverage") or 0)
+            req_ram = float(v.get("ramByteRequestAverage") or 0)
+            depts[dept] = {
+                # 沒有申請量就沒有「使用率」這個概念，回 None 讓前端斷線
+                "cpu": _round(v.get("cpuEfficiency"), 4) if req_cpu > 0 else None,
+                "ram": _round(v.get("ramEfficiency"), 4) if req_ram > 0 else None,
+                "cpuReq": _round(req_cpu, 3),
+                "cpuUse": _round(v.get("cpuCoreUsageAverage"), 3),
+            }
+        points.append({"start": any_row.get("start"), "end": any_row.get("end"),
+                       "minutes": _round(minutes, 1), "depts": depts})
+    if not covered:
+        return None
+    return {"step": step, "stepMinutes": step_min, "points": points,
+            "covered": covered, "expected": len(segments)}
+
+
 def build_report(window):
     """把 OpenCost 的四個查詢整理成畫面要用的形狀。"""
     by_cc = _alloc(window, "label:cost-center", includeIdle="true", shareIdle="false")
@@ -459,6 +541,7 @@ def build_report(window):
         "cluster": CLUSTER_LABEL,
         "coverage": cov,
         "targets": target_health(w_start, w_end),
+        "series": usage_series(window),
         "rates": rates,
         "ratesImplied": implied_rates,
         "rateCard": {

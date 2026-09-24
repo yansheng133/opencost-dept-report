@@ -13,7 +13,7 @@ set -uo pipefail
 case "${1:-}" in -h|--help) sed -n '2,12p' "$0"; exit 0 ;; esac
 
 REGISTRY="${REGISTRY:-yansheng133}"
-VERSION="${VERSION:-0.2.0}"
+VERSION="${VERSION:-0.3.0}"
 PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
 BUILDER="${BUILDER:-cost-report-builder}"
 HERE=$(cd "$(dirname "$0")" && pwd)

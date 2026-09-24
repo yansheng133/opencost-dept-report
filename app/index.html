@@ -257,6 +257,29 @@
   /* 樣本太短時把月推估整欄變淡：它跟可靠的數字長得一樣，才是危險的地方 */
   body.thin-sample table td:last-child,
   body.thin-sample table th:last-child { color: var(--ink-3); font-style: italic; }
+  /* ── 使用率折線圖 ───────────────────────────────────────────────── */
+  .chartwrap { position: relative; background: var(--card); border: 1px solid var(--rule);
+               border-radius: 8px; padding: 14px 16px 8px; box-shadow: var(--shadow); }
+  .chartwrap svg { display: block; width: 100%; height: auto; }
+  .ln-grid line { stroke: var(--rule-soft); stroke-width: 1; }
+  .ln-axis { fill: var(--ink-3); font-size: 10px; font-variant-numeric: tabular-nums; }
+  .ln-path { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .ln-dot { r: 3; stroke: var(--card); stroke-width: 1.5; }
+  .ln-hit { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 3 3; }
+  .ln-end { font-size: 11px; font-weight: 600; }
+  .ln-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 12px;
+               color: var(--ink-2); margin-top: 6px; }
+  .ln-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .ln-legend i { width: 14px; height: 2px; border-radius: 1px; }
+  .ln-tip { position: absolute; pointer-events: none; opacity: 0; transition: opacity .1s;
+            background: var(--card); border: 1px solid var(--rule); border-radius: 6px;
+            padding: 8px 10px; font-size: 12px; box-shadow: 0 4px 14px rgba(20,22,26,.12);
+            white-space: nowrap; z-index: 5; }
+  .ln-tip.on { opacity: 1; }
+  .ln-tip b { font-variant-numeric: tabular-nums; }
+  .ln-tip .r { display: flex; align-items: center; gap: 7px; margin-top: 3px; }
+  .ln-tip .r i { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+  .ln-note { font-size: 12px; color: var(--ink-3); margin-top: 8px; line-height: 1.6; }
 </style>
 
 <div class="shell">
@@ -345,9 +368,37 @@
     </div>
   </section>
 
+  <section id="usage" data-nav="使用率趨勢">
+    <div class="head">
+      <h2>二、各部門的使用率趨勢</h2>
+      <p class="muted small">使用率 = 實際用量 ÷ 申請量。這跟金額是兩回事：<strong>金額看「付了多少」，使用率看「申請的有沒有在用」</strong>。</p>
+    </div>
+    <div class="decide"><span class="k">你要做的決定</span>
+      <b>看到一條長期貼在低點的線，你要怎麼處理？</b>申請量砍下去，帳單立刻變便宜——
+      但尖峰來的時候會不夠用。這條線的<b>形狀</b>比它的高度重要：
+      平穩的低點通常是申請過多，有規律起伏的是正常的日夜或批次作業，
+      突然掉到零的要先確認是沒在用、還是<b>監控沒量到</b>。</div>
+    <div class="controls" style="margin-bottom:12px">
+      <fieldset>
+        <legend>資源</legend>
+        <div class="seg" id="seg-metric">
+          <label><input type="radio" name="metric" id="met-cpu" value="cpu" checked> CPU</label>
+          <label><input type="radio" name="metric" id="met-ram" value="ram"> 記憶體</label>
+        </div>
+      </fieldset>
+    </div>
+    <div class="chartwrap" id="ln-wrap">
+      <svg id="ln-svg" viewBox="0 0 860 260" preserveAspectRatio="none" role="img"
+           aria-label="各部門使用率隨時間變化"></svg>
+      <div class="ln-legend" id="ln-legend"></div>
+      <div class="ln-tip" id="ln-tip"></div>
+    </div>
+    <p class="ln-note" id="ln-note"></p>
+  </section>
+
   <section id="env" data-nav="正式/測試">
     <div class="sec-head">
-      <h2>二、正式環境 vs 測試環境</h2>
+      <h2>三、正式環境 vs 測試環境</h2>
     <div class="decide" style="margin-top:10px"><span class="k">你要做的決定</span>
       <b>測試環境要不要收費？</b>很多公司預設「測試不用算」，結果測試環境長成正式環境的兩倍大。
       比較務實的做法是<b>照收但用不同費率</b>，或者收費但給部門一個免費額度——重點是讓它<b>有成本感</b>。</div>
@@ -359,7 +410,7 @@
 
   <section id="workloads" data-nav="工作負載">
     <div class="sec-head">
-      <h2>三、每個工作負載付了多少、用了多少</h2>
+      <h2>四、每個工作負載付了多少、用了多少</h2>
     <div class="decide" style="margin-top:10px"><span class="k">你要做的決定</span>
       <b>回收浪費的責任歸誰？</b>平台團隊看得到浪費，但改 requests 的權限通常在應用團隊手上。
       只給報表不會有人動；要嘛平台有權調整，要嘛把節省下來的金額回饋給部門。
@@ -379,7 +430,7 @@
 
   <section id="unalloc" data-nav="無法分攤">
     <div class="sec-head">
-      <h2>四、無法分攤的成本</h2>
+      <h2>五、無法分攤的成本</h2>
     <div class="decide" style="margin-top:10px"><span class="k">你要做的決定</span>
       <b>這筆錢最後誰付？</b>沒有規則的話，答案是「平台團隊」——而且是無聲地付。
       兩個做法要一起上：前端用 admission policy 強制新工作負載一定要有部門標籤，
@@ -392,7 +443,7 @@
 
   <section id="trust" data-nav="資料可信度">
     <div class="sec-head">
-      <h2>五、資料可信度</h2>
+      <h2>六、資料可信度</h2>
       <p class="muted small">成本報表最危險的失敗方式不是壞掉，是<strong>看起來正常但少算了</strong>。這一節把「這些數字是怎麼來的」攤開。</p>
     </div>
     <div class="decide"><span class="k">你要做的決定</span>
@@ -415,7 +466,7 @@
 
   <section id="seals" data-nav="帳期封存">
     <div class="head">
-      <h2>六、帳期封存</h2>
+      <h2>七、帳期封存</h2>
       <p class="muted small">每天結帳一次並<strong>凍結</strong>。沒有這一步，「上個月的帳單」會隨著監控資料過期而查不到，甚至每次重查的金額都不一樣。</p>
     </div>
     <div class="decide"><span class="k">為什麼這是分水嶺</span>
@@ -431,7 +482,7 @@
 
   <section id="next" data-nav="下一步">
     <div class="head">
-      <h2>七、下一步該做什麼</h2>
+      <h2>八、下一步該做什麼</h2>
       <p class="muted small">下面是<strong>根據這個叢集的實際資料</strong>算出來的，不是通用建議。</p>
     </div>
     <div class="acts" id="acts"></div>
@@ -439,7 +490,7 @@
 
   <section id="rates" data-nav="計價依據">
     <div class="head">
-      <h2>八、計價依據</h2>
+      <h2>九、計價依據</h2>
       <p class="muted small">這些單價是<strong>示意值</strong>，用整數方便現場驗算。導入時換成實際的機器成本或雲端帳單即可，計算方式不變。</p>
     </div>
     <div class="decide"><span class="k">價目表</span><span id="rc-info"></span></div>
@@ -763,7 +814,7 @@ function renderLadder() {
         ? `工作負載有部門標籤，成本找得到歸屬。目前無法分攤 ${n2(unallocPct)}%。`
         : "本期沒有任何成本資料，無從判斷標籤覆蓋。",
       done: DATA.total > 0 && unallocPct <= 20,
-      next: `把未標籤的 namespace 標上 cost-center，把這個數字壓到 20% 以下（見第七節）。` },
+      next: `把未標籤的 namespace 標上 cost-center，把這個數字壓到 20% 以下（見第八節）。` },
     { t: "三、數字可信", c: `量測覆蓋率 ${cov.pct === undefined ? "—" : cov.pct + "%"}、`
         + `對帳差異 ${rec.driftPct === null || rec.driftPct === undefined ? "—" : rec.driftPct + "%"}、`
         + `單價${rateOk ? "與系統一致" : "尚未對齊"}。`,
@@ -935,7 +986,7 @@ function renderActions() {
 }
 
 function renderAll() {
-  renderGate(); renderLadder(); renderDept(); renderEnv(); renderWorkloads();
+  renderGate(); renderLadder(); renderDept(); renderUsage(); renderEnv(); renderWorkloads();
   renderUnalloc(); renderTrust(); renderSeals(); renderActions(); renderRates();
   enhanceSections(); buildToc(); capAll();
 }
@@ -986,6 +1037,190 @@ function renderMeta() {
 
 function esc(t) {
   return String(t).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+// ── 二、各部門的使用率趨勢 ────────────────────────────────────────────────
+let METRIC = "cpu";
+const LN = { W: 860, H: 260, L: 46, R: 74, T: 14, B: 26 };   // R 留給線末端的直接標示
+
+// X 軸按**真實時間**定位，不是按點的序號。用序號的話，被跳過的空區段會
+// 讓剩下的點均勻攤開——於是 6 小時的間隔跟 3 天的間隔在圖上長得一模一樣。
+function lnX(ts, t0, t1) {
+  const span = Math.max(1, t1 - t0);
+  return LN.L + (LN.W - LN.L - LN.R) * (ts - t0) / span;
+}
+function lnY(v, maxY) {
+  return LN.T + (LN.H - LN.T - LN.B) * (1 - v / maxY);
+}
+
+function renderUsage() {
+  const svg = document.getElementById("ln-svg");
+  const legend = document.getElementById("ln-legend");
+  const note = document.getElementById("ln-note");
+  if (!svg) return;
+  svg.textContent = ""; legend.textContent = "";
+  const S = DATA.series;
+  if (!S || !S.points || !S.points.length) {
+    note.textContent = "這個區間取不到分段資料（OpenCost 的 accumulate=false 查詢失敗，或這個區間還沒有樣本）。";
+    return;
+  }
+  const pts = S.points.filter(p => p.start).map(p => ({ ...p, ts: Date.parse(p.start) }))
+                      .filter(p => !isNaN(p.ts));
+  if (!pts.length) { note.textContent = "分段資料沒有可用的時間戳。"; return; }
+  const T0 = pts[0].ts, T1 = pts[pts.length - 1].ts;
+  const depts = DATA.depts.map(d => d.id);
+  const val = (p, id) => {
+    if (!p.depts) return null;                 // 整段沒有資料
+    const v = (p.depts[id] || {})[METRIC];
+    return (v === null || v === undefined) ? null : v * 100;
+  };
+  let maxY = 0;
+  pts.forEach(p => depts.forEach(id => { const v = val(p, id); if (v !== null) maxY = Math.max(maxY, v); }));
+  maxY = Math.max(20, Math.ceil(maxY / 20) * 20);          // 至少留到 20%，免得雜訊被放大成山
+
+  const ns = "http://www.w3.org/2000/svg";
+  const mk = (t, attrs, cls) => {
+    const e = document.createElementNS(ns, t);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (cls) e.setAttribute("class", cls);
+    return e;
+  };
+
+  // 捕捉滑鼠用的透明矩形。SVG 只在「有畫上東西的地方」收得到指標事件，
+  // 沒有這一塊的話，滑過空白處（也就是大部分的圖面）不會有任何反應。
+  // 注意是 transparent 不是 none——fill="none" 收不到事件。
+  svg.appendChild(mk("rect", { x: LN.L, y: LN.T, width: LN.W - LN.L - LN.R,
+                               height: LN.H - LN.T - LN.B, fill: "transparent" }));
+
+  // 格線與 Y 軸刻度
+  const grid = mk("g", {}, "ln-grid");
+  for (let i = 0; i <= 4; i++) {
+    const v = maxY * i / 4, y = lnY(v, maxY);
+    grid.appendChild(mk("line", { x1: LN.L, x2: LN.W - LN.R, y1: y, y2: y }));
+    const t = mk("text", { x: LN.L - 8, y: y + 3, "text-anchor": "end" }, "ln-axis");
+    t.textContent = v.toFixed(0) + "%";
+    grid.appendChild(t);
+  }
+  svg.appendChild(grid);
+
+  // X 軸時間標示：最多五個，避免擠在一起
+  const every = Math.max(1, Math.ceil(pts.length / 5));
+  pts.forEach((p, i) => {
+    if (i % every && i !== pts.length - 1) return;
+    const x = lnX(p.ts, T0, T1);
+    const t = mk("text", { x, y: LN.H - 8, "text-anchor": "middle" }, "ln-axis");
+    // 跨日就把日期也帶上，否則只有時分會看不出是哪一天
+    const d = p.start;
+    t.textContent = S.stepMinutes >= 360 ? d.slice(5, 10) + " " + d.slice(11, 16) : d.slice(11, 16);
+    svg.appendChild(t);
+  });
+
+  const endLabels = [];
+  depts.forEach(id => {
+    const color = COLOR[id] || "var(--ink-3)";
+    // **資料缺的地方要把線斷開。** 把相隔很久的兩個點連起來，中間那條線
+    // 看起來跟真的量到一樣——而那段可能是監控掛掉，不是使用率真的走成那樣。
+    let segs = [], cur = [];
+    pts.forEach((p, i) => {
+      const v = val(p, id);
+      if (v === null) { if (cur.length) segs.push(cur); cur = []; return; }
+      cur.push([lnX(p.ts, T0, T1), lnY(v, maxY)]);
+    });
+    if (cur.length) segs.push(cur);
+
+    segs.forEach(seg => {
+      if (seg.length === 1) {
+        svg.appendChild(mk("circle", { cx: seg[0][0], cy: seg[0][1], fill: color }, "ln-dot"));
+        return;
+      }
+      const d = seg.map(([x, y], i) => (i ? "L" : "M") + x.toFixed(1) + " " + y.toFixed(1)).join(" ");
+      svg.appendChild(mk("path", { d, stroke: color }, "ln-path"));
+    });
+
+    // 直接標示在線的末端：四條以內用直接標示比圖例好找。
+    // 位置先收集起來，等全部畫完再一起推開——兩條線收在同一個高度時
+    // 標籤會疊成一團，那比沒有標籤更難讀。
+    const last = segs.length ? segs[segs.length - 1][segs[segs.length - 1].length - 1] : null;
+    if (last) endLabels.push({ y: last[1], text: dname(id), color });
+    const li = document.createElement("span");
+    li.innerHTML = `<i style="background:${color}"></i>${esc(dname(id))}`;
+    legend.appendChild(li);
+  });
+
+  // 標籤去重疊：由上往下掃，太近的往下推。
+  // 推完如果超出底部，**整組往上移**——逐個夾回邊界的話，
+  // 收在同一個高度的兩條線會被夾回同一點，等於沒有推開（踩過）。
+  // 界線是**繪圖區**的底部，不是圖框底部——用圖框底部的話標籤會掉進 X 軸刻度那一列。
+  const MIN_GAP = 14, TOP = LN.T + 4, BOTTOM = LN.H - LN.B;
+  const arr = endLabels.sort((a, b) => a.y - b.y);
+  // 往下推
+  arr.forEach((l, i) => { if (i && l.y - arr[i - 1].y < MIN_GAP) l.y = arr[i - 1].y + MIN_GAP; });
+  // 超出底部就從最後一個往回推，只動需要動的那幾個（整組平移會把不相干的標籤也拉離它的線）
+  if (arr.length && arr[arr.length - 1].y > BOTTOM) {
+    arr[arr.length - 1].y = BOTTOM;
+    for (let i = arr.length - 2; i >= 0; i--) {
+      if (arr[i + 1].y - arr[i].y < MIN_GAP) arr[i].y = arr[i + 1].y - MIN_GAP;
+    }
+  }
+  arr.forEach(l => {
+    const t = mk("text", { x: LN.W - LN.R + 6, y: Math.max(l.y, TOP) + 4, fill: l.color }, "ln-end");
+    t.textContent = l.text;
+    svg.appendChild(t);
+  });
+
+  // 滑鼠移上去的十字線與提示
+  const hit = mk("line", { x1: 0, x2: 0, y1: LN.T, y2: LN.H - LN.B, opacity: 0 }, "ln-hit");
+  svg.appendChild(hit);
+  const dots = mk("g", {}, "");
+  svg.appendChild(dots);
+  const tip = document.getElementById("ln-tip");
+  const wrap = document.getElementById("ln-wrap");
+
+  const onMove = ev => {
+    const r = svg.getBoundingClientRect();
+    const sx = (ev.clientX - r.left) / r.width * LN.W;
+    let best = 0, bestD = 1e9;
+    pts.forEach((p, i) => {
+      const d = Math.abs(lnX(p.ts, T0, T1) - sx);
+      if (d < bestD) { bestD = d; best = i; }
+    });
+    const p = pts[best], x = lnX(p.ts, T0, T1);
+    hit.setAttribute("x1", x); hit.setAttribute("x2", x); hit.setAttribute("opacity", 1);
+    dots.textContent = "";
+    let rows = "";
+    depts.forEach(id => {
+      const v = val(p, id);
+      const color = COLOR[id] || "var(--ink-3)";
+      if (v === null) {
+        rows += `<div class="r"><i style="background:${color}"></i>${esc(dname(id))} <b>沒有資料</b></div>`;
+        return;
+      }
+      const y = lnY(v, maxY);
+      dots.appendChild(mk("circle", { cx: x, cy: y, fill: color }, "ln-dot"));
+      const raw = p.depts[id] || {};
+      rows += `<div class="r"><i style="background:${color}"></i>${esc(dname(id))} <b>${v.toFixed(1)}%</b>`
+        + (METRIC === "cpu" && raw.cpuReq ? `<span class="muted small">（申請 ${raw.cpuReq} 核，用 ${raw.cpuUse}）</span>` : "")
+        + "</div>";
+    });
+    tip.innerHTML = `<b>${esc(p.start.slice(5, 16).replace("T", " "))}</b>`
+      + (p.depts ? ` 起 ${p.minutes} 分鐘` : " <span style='color:var(--warn)'>這個時段沒有量到資料</span>")
+      + rows;
+    tip.className = "ln-tip on";
+    const tx = Math.min(Math.max(x / LN.W * r.width - tip.offsetWidth / 2, 4),
+                        r.width - tip.offsetWidth - 4);
+    tip.style.left = tx + "px";
+    tip.style.top = "8px";
+  };
+  svg.addEventListener("mousemove", onMove);
+  svg.addEventListener("mouseleave", () => {
+    tip.className = "ln-tip"; hit.setAttribute("opacity", 0); dots.textContent = "";
+  });
+
+  const miss = S.expected - S.covered;
+  note.innerHTML = `取樣間隔 ${S.step}，共 ${S.covered} 個點。`
+    + (miss > 0 ? `<b>有 ${miss} 個時段沒有資料，折線在那裡是斷開的</b>——`
+                + `把兩端連起來會讓缺漏看起來像真的量到過。` : "")
+    + "　線末端的名稱是直接標示，滑過圖表看每個時間點的數字。";
 }
 
 // ── 導覽與收合 ────────────────────────────────────────────────────────────
@@ -1160,6 +1395,9 @@ async function load(win) {
 }
 
 document.querySelectorAll('input[name="idle"]').forEach(r => r.addEventListener("change", () => DATA && renderDept()));
+document.querySelectorAll('input[name="metric"]').forEach(r => r.addEventListener("change", e => {
+  METRIC = e.target.value; if (DATA) renderUsage();
+}));
 load();
 setInterval(() => load(DATA && DATA.window ? DATA.window.query : undefined), 60000);
 </script>

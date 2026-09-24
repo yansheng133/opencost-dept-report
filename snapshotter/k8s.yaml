@@ -77,7 +77,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: snapshotter
-          image: docker.io/yansheng133/cost-snapshotter:0.2.0
+          image: docker.io/yansheng133/cost-snapshotter:0.3.0
           imagePullPolicy: IfNotPresent
           env:
             - {name: OUT_DIR, value: /data}

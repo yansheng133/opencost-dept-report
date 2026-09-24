@@ -14,6 +14,7 @@ OpenCost 自己的 UI 是給平台團隊看的：它按 namespace 和工作負�
 
 | 區塊 | 回答什麼問題 |
 |---|---|
+| **各部門的使用率趨勢** | 折線圖：各部門申請的資源有沒有在用、什麼時候在用。看得出日夜曲線、批次作業，以及長期貼在低點的浪費 |
 | **這份數字可以拿去收錢嗎** | 五項檢查（覆蓋率、推估佔比、對帳、單價一致性、標籤治理）逐項攤開，給出「可出帳／需標示／需核准」的結論 |
 | **你現在走到哪一階** | 四階成熟度：看得到成本 → 分得出部門 → 數字可信 → 能真的收錢。用實際資料判斷位置，並指出下一階缺什麼 |
 | 各部門應分攤金額 | 用量 × 單價 = 金額，附月推估。**閒置成本可切換「獨立列帳／按比例分攤」**，兩種做法總額相同 |
@@ -81,7 +82,7 @@ KCFG=<kubeconfig 路徑> bash snapshotter/deploy.sh --apply # 部署快照器（
 換版本或換成自建的 registry：
 
 ```bash
-IMAGE_TAG=0.2.0 KCFG=… bash deploy.sh --apply
+IMAGE_TAG=0.3.0 KCFG=… bash deploy.sh --apply
 IMAGE=myregistry.local/cost-report:1.2.3 KCFG=… bash deploy.sh --apply
 ```
 
@@ -119,6 +120,7 @@ REGISTRY=<你的帳號> bash build-images.sh --push
 | `WINDOWS` | `1h,24h,7d` | 畫面可選的區間。**其他值會被拒絕**，避免有人下超大查詢把 Prometheus 打爆 |
 | `DEFAULT_WINDOW` | `24h` | 預設區間 |
 | `CLUSTER_LABEL` | 空 | 畫面上顯示的叢集名稱 |
+| `SERIES_STEPS` | `1h=5m,24h=1h,7d=6h` | 使用率折線圖每個區間的取樣間隔。點太密看不出趨勢，太疏會把日夜曲線抹平 |
 | `SYSTEM_NS_PREFIXES` | `kube-system,cattle-,…` | 這些 namespace 的元件不列進工作負載表（仍計入「無法分攤」） |
 | `PROM_URL` | `http://prometheus-server.prometheus-system.svc.cluster.local:80` | 量資料完整度用。連不上只是少一塊資訊，報表照常 |
 | `COVERAGE_JOB` | `opencost` | 用哪個 scrape job 判斷「這段有沒有量到」 |
@@ -160,8 +162,8 @@ REGISTRY=<你的帳號> bash build-images.sh --push
 
 | | |
 |---|---|
-| 報表服務 | `docker.io/yansheng133/cost-report:0.2.0` |
-| 快照器 | `docker.io/yansheng133/cost-snapshotter:0.2.0` |
+| 報表服務 | `docker.io/yansheng133/cost-report:0.3.0` |
+| 快照器 | `docker.io/yansheng133/cost-snapshotter:0.3.0` |
 | 架構 | `linux/amd64`、`linux/arm64` |
 | 基底 | `registry.suse.com/bci/python:3.12`，非 root（UID 1000）執行 |
 

@@ -199,6 +199,66 @@ function check(ok, what, detail) {
     await page.waitForTimeout(3000);
   }
 
+  // ── 使用率折線圖 ──
+  const chart = await page.evaluate(() => {
+    const svg = document.getElementById("ln-svg");
+    if (!svg) return null;
+    const paths = [...svg.querySelectorAll("path.ln-path")];
+    const ends = [...svg.querySelectorAll("text.ln-end")].map(t => +t.getAttribute("y")).sort((a, b) => a - b);
+    const gaps = ends.slice(1).map((y, i) => y - ends[i]);
+    return { lines: paths.length, hasCapture: !!svg.querySelector("rect[fill='transparent']"),
+             labels: ends.length, minGap: gaps.length ? Math.min(...gaps) : 99,
+             maxLabelY: ends.length ? ends[ends.length - 1] : 0 };
+  });
+  if (chart) {
+    check(chart.lines > 0, "折線圖有畫出線", JSON.stringify(chart));
+    check(chart.minGap >= 13, "線末端的直接標示沒有互相重疊", JSON.stringify(chart));
+    // 標籤掉進 X 軸刻度那一列的話會跟時間字重疊（viewBox 高 260、底部留白 26）
+    check(chart.maxLabelY <= 240, "直接標示沒有掉進 X 軸刻度那一列", JSON.stringify(chart));
+    // SVG 只在有畫東西的地方收得到指標事件，沒有這塊透明矩形，滑過空白處不會有反應
+    check(chart.hasCapture, "有捕捉滑鼠用的透明矩形");
+
+    // 時間軸必須照真實時間，不是點的序號：否則 6 小時的間隔跟 3 天的間隔看起來一樣
+    const axis = await page.evaluate(() => {
+      const S = DATA.series;
+      if (!S) return null;
+      const lead = S.points.findIndex(p => p.depts);
+      if (lead <= 0) return { skip: true };
+      const firstX = Math.min(...[...document.querySelectorAll("#ln-svg path.ln-path")]
+        .map(p => parseFloat(p.getAttribute("d").match(/M([\d.]+)/)[1])));
+      return { lead, firstX };
+    });
+    if (axis && !axis.skip) {
+      check(axis.firstX > 60,
+            `序列前面有 ${axis.lead} 段空白，第一個資料點要往右縮（x=${Math.round(axis.firstX)}）`,
+            JSON.stringify(axis));
+    } else {
+      console.log("SKIP  時間軸留白（這次的序列開頭沒有空白段）");
+    }
+
+    // 中間挖一個洞，折線要斷開。一段連續資料畫一個 <path>，所以斷開＝路徑數變多。
+    const broke = await page.evaluate(() => {
+      const before = document.querySelectorAll("#ln-svg path.ln-path").length;
+      const withData = DATA.series.points.filter(p => p.depts);
+      if (withData.length < 3) return null;
+      const mid = DATA.series.points.indexOf(withData[Math.floor(withData.length / 2)]);
+      const keep = DATA.series.points[mid].depts;
+      DATA.series.points[mid].depts = null;
+      renderUsage();
+      const after = document.querySelectorAll("#ln-svg path.ln-path").length;
+      DATA.series.points[mid].depts = keep;
+      renderUsage();
+      return { before, after };
+    });
+    if (broke) {
+      check(broke.after > broke.before,
+            "資料缺一段時折線會斷開，不會內插（把兩端連起來等於偽造那段量測）",
+            JSON.stringify(broke));
+    }
+  } else {
+    console.log("SKIP  使用率折線圖（頁面上沒有這個區塊）");
+  }
+
   check(errors.length === 0, "沒有 JavaScript 錯誤", errors.join(" | "));
   check(warnings.length === 0, "沒有觸發收合的安全網（有的話代表版面結構壞了）", warnings.join(" | "));
 
