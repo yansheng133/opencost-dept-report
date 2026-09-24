@@ -240,9 +240,13 @@
   .anchor { font-size: 13px; color: var(--ink-3); text-decoration: none; opacity: 0; transition: opacity .12s; }
   .h2row:hover .anchor { opacity: 1; }
   .anchor:hover { color: var(--accent); }
-  section.collapsed > *:not(.head):not(.verdict) { display: none; }
-  section.collapsed .head p, section.collapsed .head .decide { display: none; }
-  section.gate.collapsed .verdict ~ * { display: none; }
+  /* 收合時保留的是「裝著標題的那一塊」，由 JS 依實際結構標上 .fold-keep，
+     不是比對 class 名稱。這一頁同時存在 .head 與 .sec-head 兩種標題容器，
+     早先版本只列了 .head，於是另外五節一收合就連標題帶按鈕一起消失、
+     再也打不開。用結構判斷就不會有「漏列一個名字」這種壞法。 */
+  section.collapsed > *:not(.fold-keep) { display: none; }
+  section.collapsed .fold-keep p,
+  section.collapsed .fold-keep .decide { display: none; }
   /* 錨點跳轉時不要被黏著的頂部導覽蓋住標題 */
   section[id] { scroll-margin-top: 60px; }
 
@@ -964,6 +968,14 @@ function setFold(sec, on, store) {
   sec.classList.toggle("collapsed", on);
   const btn = sec.querySelector(".fold");
   if (btn) { btn.textContent = on ? "▸" : "▾"; btn.title = on ? "展開這一節" : "收合這一節"; }
+  // 安全網：收合之後如果連「展開」的按鈕都被藏起來，這一節就再也打不開了。
+  // 這不是修正（修正在 CSS 的結構判斷），是確保未來改版面時不會把人鎖在外面。
+  if (on && btn && btn.offsetParent === null) {
+    sec.classList.remove("collapsed");
+    btn.textContent = "▾";
+    console.warn(`[cost-report] ${sec.id} 收合後按鈕會消失，已還原。版面結構可能改過了。`);
+    return;
+  }
   if (store) { on ? store.add(sec.id) : store.delete(sec.id); }
 }
 
@@ -986,6 +998,10 @@ function enhanceSections() {
     link.className = "anchor"; link.href = "#" + sec.id; link.textContent = "#";
     link.title = "這一節的固定連結";
     row.append(fold, h2, link);
+    // 標出「收合時要留著的那一塊」＝ 實際裝著標題的元素。
+    // h2 若直接掛在 section 底下，就讓 .h2row 自己當那一塊。
+    const holder = row.parentElement;
+    (holder === sec ? row : holder).classList.add("fold-keep");
     if (folded.has(sec.id)) setFold(sec, true, null);
   });
 }

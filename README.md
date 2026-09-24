@@ -130,6 +130,7 @@ docker push <registry>/cost-report:0.1.0
 |---|---|
 | `examples/demo-workloads.yaml` | 示範用工作負載：日夜曲線、記憶體浪費、沒有標籤的三種情況 |
 | `examples/precheck.sh` | demo 前的健康檢查，逐項 PASS／FAIL |
+| `examples/ui-smoke.js` | 畫面的冒煙測試（導覽、收合、錨點、三種寬度）。需要 Playwright，是唯一用到外部套件的東西 |
 | `examples/export-by-dept.sh` | 依部門匯出 CSV，`--dept` 可出單一部門逐一工作負載 |
 | `docs/opencost-notes.md` | **實機量測過的 OpenCost 行為與陷阱**，比這份 README 更值得先看 |
 | `docs/data-gaps.md` | **監控斷線時成本怎麼分攤**：降級階梯、來源標記、出帳門檻 |

@@ -19,6 +19,7 @@
 !/examples/
 !/examples/*.yaml
 !/examples/*.sh
+!/examples/*.js
 !/snapshotter/
 !/snapshotter/*.py
 !/snapshotter/*.yaml
