@@ -6,7 +6,9 @@ LABEL org.opencontainers.image.title="cost-report" \
       org.opencontainers.image.source="https://example.internal/cost-report"
 
 WORKDIR /app
-COPY app/app.py app/index.html /app/
+COPY app/app.py app/billing.py app/index.html /app/
+# 價目表也放一份當預設值；正式環境用 ConfigMap 蓋掉 /config/ratecard.json
+COPY app/ratecard.json /config/ratecard.json
 
 # 以非 root 執行；bci 映像檔沒有預設非 root 使用者，這裡指定 UID（不必建帳號，Kubernetes 也會再指定一次）
 USER 1000:1000
@@ -16,6 +18,8 @@ ENV OPENCOST_URL=http://opencost.opencost.svc.cluster.local:9003 \
     WINDOWS=1h,24h,7d \
     DEFAULT_WINDOW=24h \
     LISTEN_PORT=8080 \
+    RATECARD_PATH=/config/ratecard.json \
+    SEAL_DIR=/seals \
     PYTHONUNBUFFERED=1
 
 EXPOSE 8080

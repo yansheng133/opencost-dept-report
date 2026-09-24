@@ -1,5 +1,5 @@
 # 宣告量快照器：Prometheus 掛掉時的第二份分攤依據。
-# 它只讀 API server（pods／namespaces），不碰 Prometheus，也不需要 registry
+# 它只讀 API server（pods／namespaces／persistentvolumeclaims），不碰 Prometheus，也不需要 registry
 # （程式碼由 deploy.sh 放進 ConfigMap，掛進官方 Python 映像檔執行）。
 ---
 apiVersion: v1
@@ -13,9 +13,11 @@ kind: ClusterRole
 metadata:
   name: cost-snapshotter
 rules:
-  # 只要 metadata 與 spec.resources，不需要任何寫入權限，也不碰 secret
+  # 只要 metadata 與 spec.resources，不需要任何寫入權限，也不碰 secret。
+  # persistentvolumeclaims 是給儲存宣告量用的；少了它，快照的 pvcs 會永遠是空的，
+  # 而空的 pvcs 跟「真的沒有 PVC」長得一模一樣——儲存成本會無聲地算成 0。
   - apiGroups: [""]
-    resources: [pods, namespaces]
+    resources: [pods, namespaces, persistentvolumeclaims]
     verbs: [get, list]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -38,6 +40,19 @@ spec:
   # RKE2 裝了 local-path 也不一定會被標成 default——留空的話 PVC 會一直 Pending，
   # 而錯誤訊息（"no persistent volumes available"）看不出真正原因。
   # 實測每天 1.7 MiB（5 分鐘一次、36 個 Pod），1Gi 夠用 35 天以上。
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cost-snapshotter
+  namespace: cost-report
+  labels: {app: cost-snapshotter}
+spec:
+  # 給同叢集的 cost-report 查「這段區間各部門宣告了多少」用的唯讀介面。
+  # 不對外曝露（沒有 Ingress、沒有 NodePort）：它讀的是分攤依據，不是公開資料。
+  selector: {app: cost-snapshotter}
+  ports:
+    - {name: http, port: 80, targetPort: 8080, protocol: TCP}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -70,10 +85,21 @@ spec:
             - {name: DEPT_LABEL, value: cost-center}
             - {name: ENV_LABEL, value: env}
             - {name: RETENTION_DAYS, value: "35"}
+            - {name: LISTEN_PORT, value: "8080"}
             - {name: PYTHONUNBUFFERED, value: "1"}
+          ports:
+            - {name: http, containerPort: 8080, protocol: TCP}
+          readinessProbe:
+            # 這個只管「查詢介面接不接得起來」，決定要不要把流量導進 Service。
+            # 它跟下面的 livenessProbe 分工不同，不要合併成一個。
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 5
+            periodSeconds: 10
           livenessProbe:
             # 探的是「還寫得出快照嗎」，不是「行程還在嗎」。
             # 行程活著卻停止寫入，才是會無聲吃掉分攤依據的那種壞法。
+            # 刻意不改成打 /healthz：HTTP 在背景執行緒，取樣迴圈卡死它照樣回 200，
+            # 那樣這個探針就變成「永遠會過的檢查」，等於沒有。
             exec:
               command:
                 - python3

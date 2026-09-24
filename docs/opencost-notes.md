@@ -51,6 +51,19 @@ OpenCost 1.121.2、Prometheus 3.14，chart 取自 SUSE Application Collection。
 - **標籤不會回溯**：查詢區間跨越「加上標籤」的時間點時，前段會落在 `__unallocated__`，
   同一個工作負載也可能出現兩列（一列未標籤、一列已標籤）。
 
+## 跟資產成本對帳
+
+`/assets` 這支 API 給的是節點與磁碟的實際成本，可以拿來驗證「分攤出去的錢」有沒有漏。
+
+- **對帳一定要用含閒置的分攤總額**（`includeIdle=true`）。不含的話會看起來短少兩成以上
+  （實測 −26.4%），然後你會花一個下午找一個根本不存在的漏洞：閒置就是節點買了沒人用的
+  那一塊，它當然算在資產成本裡。
+- 實測對得非常準：`includeIdle=true` 的分攤總額 **142.6174** vs 資產總額 **142.6179**，
+  差 **−0.0004%**。這個數字本身就是很好的說服素材——它證明分攤是完整的。
+- `aggregate=type` 其實**不會真的彙總**：回來的是逐一資產（兩顆磁碟各一列），
+  要自己按 `type` 欄位加總。
+- 資產分三類：`Node`（絕大部分）、`Disk`、`ClusterManagement`（自架是 0）。
+
 ## 自己寫 PromQL 時的重複計算
 
 OpenCost 也會輸出 `kube_pod_container_resource_requests`（`job="opencost"`），和 kube-state-metrics

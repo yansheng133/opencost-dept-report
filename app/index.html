@@ -155,6 +155,43 @@
   .cov.on { display:block; }
   .cov b { color:var(--ink); font-weight:600; }
   .cov .gaps { margin-top:6px; color:var(--ink-3); font-variant-numeric: tabular-nums; }
+  /* ── 出帳關卡：一份帳單要先通過檢查才能發出去 ── */
+  .gate { border:1px solid var(--rule); border-radius:8px; background:var(--card); padding:18px 20px; margin:0 0 26px; box-shadow:var(--shadow); }
+  .gate .verdict { display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:4px; }
+  .gate .tag { font-size:12px; font-weight:700; letter-spacing:.06em; padding:3px 9px; border-radius:4px; }
+  .gate .tag.ok { background:rgba(26,127,82,.12); color:var(--good); }
+  .gate .tag.mark { background:rgba(180,87,26,.12); color:var(--warn); }
+  .gate .tag.block { background:rgba(180,40,40,.12); color:#b42828; }
+  .gate h2 { margin:0; font-size:19px; }
+  .gate .sub { font-size:13px; color:var(--ink-2); line-height:1.65; margin:6px 0 14px; }
+  .checks { display:grid; gap:1px; background:var(--rule-soft); border:1px solid var(--rule-soft); border-radius:6px; overflow:hidden; }
+  .chk { display:grid; grid-template-columns:22px 1fr auto; gap:10px; align-items:start; background:var(--card); padding:10px 12px; font-size:13px; }
+  .chk .dot { width:9px; height:9px; border-radius:50%; margin-top:5px; }
+  .chk .dot.ok { background:var(--good); } .chk .dot.mark { background:var(--warn); }
+  .chk .dot.block { background:#b42828; } .chk .dot.unknown { background:var(--ink-3); }
+  .chk .nm { font-weight:600; color:var(--ink); }
+  .chk .why { color:var(--ink-3); font-size:12px; line-height:1.6; margin-top:3px; }
+  .chk .pol { color:var(--ink-3); font-size:11.5px; margin-top:2px; font-style:italic; }
+  .chk .v { font-variant-numeric:tabular-nums; font-weight:600; white-space:nowrap; }
+  /* ── 成熟度階梯 ── */
+  .ladder { display:grid; gap:1px; background:var(--rule-soft); border:1px solid var(--rule-soft); border-radius:6px; overflow:hidden; margin-top:10px; }
+  .step { display:grid; grid-template-columns:26px 1fr; gap:10px; background:var(--card); padding:11px 13px; font-size:13px; }
+  .step .mark2 { font-weight:700; }
+  .step.done .mark2 { color:var(--good); } .step.todo .mark2 { color:var(--ink-3); }
+  .step .t { font-weight:600; } .step.todo .t { color:var(--ink-2); }
+  .step .c { color:var(--ink-3); font-size:12px; margin-top:3px; line-height:1.6; }
+  .step .next { color:var(--warn); font-size:12px; margin-top:4px; line-height:1.6; }
+  /* ── 「這一節你要做的決定」 ── */
+  .decide { border-left:3px solid var(--accent); background:var(--card); border:1px solid var(--rule-soft); border-left-width:3px;
+            border-radius:0 6px 6px 0; padding:11px 14px; margin:0 0 16px; font-size:13px; line-height:1.7; color:var(--ink-2); }
+  .decide b { color:var(--ink); }
+  .decide .k { display:block; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--accent); font-weight:700; margin-bottom:3px; }
+  /* ── 行動建議 ── */
+  .acts { display:grid; gap:10px; }
+  .act { border:1px solid var(--rule-soft); border-radius:6px; background:var(--card); padding:12px 14px; font-size:13px; line-height:1.7; }
+  .act .n { display:inline-block; min-width:20px; font-weight:700; color:var(--accent); }
+  .act .g { color:var(--ink-3); font-size:12px; }
+  .basis-pill { font-size:10.5px; padding:1px 6px; border-radius:3px; background:rgba(180,87,26,.12); color:var(--warn); margin-left:6px; white-space:nowrap; }
 </style>
 
 <div class="wrap">
@@ -173,6 +210,21 @@
        所以要講在最前面，而不是藏在附註裡。 -->
   <div class="cov" id="cov"></div>
 
+  <!-- 這一塊是整頁最重要的：客戶通常以為「把成本算出來」就結束了，
+       實際上帳單要先通過一組檢查才能發。把檢查攤開來，比給一個漂亮的數字有用。 -->
+  <section class="gate">
+    <div class="verdict"><h2>這份數字可以拿去收錢嗎？</h2><span class="tag" id="g-tag">—</span></div>
+    <div class="sub" id="g-sub"></div>
+    <div class="checks" id="g-checks"></div>
+  </section>
+
+  <section>
+    <div class="head"><h2>你現在走到哪一階</h2>
+      <p>做部門成本分攤不是一次到位的工程。這四階各自要解決不同的問題，<b>跳階不會成功</b>——
+         標籤還沒治理好就開始收錢，你會把時間全花在吵數字。</p></div>
+    <div class="ladder" id="ladder"></div>
+  </section>
+
   <section>
     <div class="totals">
       <div><span class="k">期間總成本</span><span class="v num" id="t-total"></span><span class="s">全叢集，含閒置與未標籤</span></div>
@@ -188,6 +240,10 @@
       <h2>一、各部門應分攤金額</h2>
       <p class="muted small">閒置成本要不要分攤給部門，是 chargeback 的第一個決定。兩種做法的<strong>總額完全相同</strong>，差別只在誰吸收那塊餘裕。</p>
     </div>
+    <div class="decide"><span class="k">你要做的決定</span>
+      <b>閒置成本誰吸收？</b>切換下面兩個選項看差別。獨立列帳＝平台團隊扛，部門只付自己申請的；
+      按比例分攤＝部門一起分攤買大了的那部分。<b>沒有哪個比較對</b>，但這個決定會改變各部門的帳單金額，
+      所以要先講好、寫進計價政策，不要每個月重新吵一次。</div>
     <div class="controls">
       <fieldset>
         <legend>區間</legend>
@@ -225,6 +281,9 @@
   <section>
     <div class="sec-head">
       <h2>二、正式環境 vs 測試環境</h2>
+    <div class="decide" style="margin-top:10px"><span class="k">你要做的決定</span>
+      <b>測試環境要不要收費？</b>很多公司預設「測試不用算」，結果測試環境長成正式環境的兩倍大。
+      比較務實的做法是<b>照收但用不同費率</b>，或者收費但給部門一個免費額度——重點是讓它<b>有成本感</b>。</div>
       <p class="muted small">同一批工作負載再用 <code>env</code> 標籤切一次。測試環境常被當成「不用算」，實際上它有明確的金額。</p>
     </div>
     <div class="chart" id="chart-env"></div>
@@ -234,6 +293,10 @@
   <section>
     <div class="sec-head">
       <h2>三、每個工作負載付了多少、用了多少</h2>
+    <div class="decide" style="margin-top:10px"><span class="k">你要做的決定</span>
+      <b>回收浪費的責任歸誰？</b>平台團隊看得到浪費，但改 requests 的權限通常在應用團隊手上。
+      只給報表不會有人動；要嘛平台有權調整，要嘛把節省下來的金額回饋給部門。
+      另外注意：<b>效率低不等於浪費</b>——尖峰備援、批次工作、資料庫的緩衝區都會長這樣。</div>
       <p class="muted small">計價依 <strong>max(申請量, 實際用量)</strong>。申請得多卻沒在用，差額就是可以回收的部分——但要先確認它是不是真的閒著。</p>
     </div>
     <div class="card scroll">
@@ -250,6 +313,10 @@
   <section>
     <div class="sec-head">
       <h2>四、無法分攤的成本</h2>
+    <div class="decide" style="margin-top:10px"><span class="k">你要做的決定</span>
+      <b>這筆錢最後誰付？</b>沒有規則的話，答案是「平台團隊」——而且是無聲地付。
+      兩個做法要一起上：前端用 admission policy 強制新工作負載一定要有部門標籤，
+      後端訂一個預設歸屬規則（掛平台，或按比例攤回各部門）。這個比例應該要逐月下降，它是治理的成績單。</div>
       <p class="muted small">沒有 <code>cost-center</code> 標籤的東西無法歸屬到部門。這一塊的大小，就是標籤治理做得好不好的量化指標。</p>
     </div>
     <div class="chart" id="chart-unalloc"></div>
@@ -258,9 +325,57 @@
 
   <section>
     <div class="sec-head">
-      <h2>五、計價依據</h2>
+      <h2>五、資料可信度</h2>
+      <p class="muted small">成本報表最危險的失敗方式不是壞掉，是<strong>看起來正常但少算了</strong>。這一節把「這些數字是怎麼來的」攤開。</p>
+    </div>
+    <div class="decide"><span class="k">你要做的決定</span>
+      <b>資料不完整的時候要不要照樣出帳？</b>三個選項：不補（總額會對不上帳單，短收的部分無聲落在平台）、
+      補了但不說（這是捏造）、<b>補了並標示來源與方法</b>。只有第三個站得住。</div>
+    <div class="card scroll">
+      <table>
+        <thead><tr><th>項目</th><th>數值</th><th>說明</th></tr></thead>
+        <tbody id="tbl-trust"></tbody>
+      </table>
+    </div>
+    <p class="muted small" style="margin-top:12px">監控目標的健康度——<strong>少數 target 掉線比全部掉線危險</strong>，因為報表照樣產出，只有那幾台的成本被少算。</p>
+    <div class="card scroll">
+      <table>
+        <thead><tr><th>抓取工作（job）</th><th class="r">預期目標數</th><th class="r">最差時</th><th class="r">掉線樣本</th><th>狀態</th></tr></thead>
+        <tbody id="tbl-targets"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="head">
+      <h2>六、帳期封存</h2>
+      <p class="muted small">每天結帳一次並<strong>凍結</strong>。沒有這一步，「上個月的帳單」會隨著監控資料過期而查不到，甚至每次重查的金額都不一樣。</p>
+    </div>
+    <div class="decide"><span class="k">為什麼這是分水嶺</span>
+      即時查詢的儀表板，跟可以拿去對帳的帳務系統，差別就在這裡：<b>結帳之後數字不再變動</b>。
+      每一份封存都附雜湊值，事後可以驗證沒有被改過；內容如果跟封存時不同，系統會回報衝突而<b>不是安靜覆蓋</b>。</div>
+    <div class="card scroll">
+      <table>
+        <thead><tr><th>帳期</th><th class="r">總額</th><th class="r">覆蓋率</th><th class="r">推估</th><th>當日出帳結論</th><th>完整性</th></tr></thead>
+        <tbody id="tbl-seals"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="head">
+      <h2>七、下一步該做什麼</h2>
+      <p class="muted small">下面是<strong>根據這個叢集的實際資料</strong>算出來的，不是通用建議。</p>
+    </div>
+    <div class="acts" id="acts"></div>
+  </section>
+
+  <section>
+    <div class="head">
+      <h2>八、計價依據</h2>
       <p class="muted small">這些單價是<strong>示意值</strong>，用整數方便現場驗算。導入時換成實際的機器成本或雲端帳單即可，計算方式不變。</p>
     </div>
+    <div class="decide"><span class="k">價目表</span><span id="rc-info"></span></div>
     <div class="card scroll">
       <table>
         <thead><tr><th>資源</th><th>單價</th><th>計價單位</th><th>本期用量</th><th>金額</th></tr></thead>
@@ -462,16 +577,41 @@ function renderUnalloc() {
 function renderRates() {
   const tb = document.getElementById("tbl-rate"); tb.textContent = "";
   const sum = k => DATA.depts.reduce((s, d) => s + (d[k] || 0), 0);
+  const chk = (DATA.rateCard || {}).check || {};
+  const mark = k => {
+    const c = chk[k];
+    if (!c || c.status === "unknown") return "";
+    return c.status === "ok"
+      ? ' <span class="muted small">✓ 與系統一致</span>'
+      : ` <span class="basis-pill">✗ 系統實際用 ${c.implied}</span>`;
+  };
   [["CPU", DATA.rates.cpu, "每 vCPU 小時", sum("cpuCoreHours").toFixed(4) + " 核時", sum("cpu")],
    ["記憶體", DATA.rates.ram, "每 GiB 小時", sum("ramGiBHours").toFixed(4) + " GiB 時", sum("ram")],
    ["儲存", DATA.rates.storage, "每 GiB 小時", sum("pvGiBHours").toFixed(4) + " GiB 時", sum("pv")]
-  ].forEach(([res, rate, unit, used, amount]) => {
+  ].forEach(([res, rate, unit, used, amount], i) => {
+    const key = ["cpu", "ram", "storage"][i];
     const tr = el("tr");
     const c3 = el("td", null, unit); c3.style.textAlign = "left";
-    tr.append(el("td", null, res), el("td", "num", rate === null ? "—" : String(rate)), c3,
-      el("td", "num", used), el("td", "num", n4(amount)));
+    const c2 = el("td", "num");
+    c2.innerHTML = (rate === null ? "—" : String(rate)) + mark(key);
+    tr.append(el("td", null, res), c2, c3, el("td", "num", used), el("td", "num", n4(amount)));
     tb.append(tr);
   });
+  // 價目表的來歷：誰定的、什麼時候生效、為什麼改。單價沒有這些資訊就沒辦法稽核。
+  const rcBox = document.getElementById("rc-info");
+  if (rcBox) {
+    const rc = DATA.rateCard || {};
+    if (!rc.loaded) {
+      rcBox.innerHTML = `<b>目前沒有價目表檔案</b>，單價是從 OpenCost 的金額÷用量<b>反推</b>的。`
+        + `可以跑，但是改價無法追溯、帳期中途調價也沒辦法分段計算。正式環境應該放一份版本化的價目表。`;
+    } else {
+      const v = rc.version || {};
+      rcBox.innerHTML = `價目表共 <b>${(rc.versions || []).length}</b> 個版本，本期適用 <b>${esc(v.effective || "—")}</b> 生效的那一版`
+        + (v.reason ? `（${esc(v.reason)}）` : "") + (v.author ? `，訂定者 ${esc(v.author)}` : "")
+        + `。幣別：${esc(rc.currency || "—")}。`
+        + `<br><b>改價要新增版本，不要改舊版</b>——舊帳期必須永遠用當時的單價重算得出同樣的金額。`;
+    }
+  }
   document.getElementById("n-consistency").textContent = n4(DATA.total);
 }
 
@@ -497,7 +637,215 @@ function buildSegs() {
   });
 }
 
-function renderAll() { renderDept(); renderEnv(); renderWorkloads(); renderUnalloc(); renderRates(); }
+// ---- 出帳關卡 ----
+const VERDICT = {
+  ok:    ["可以出帳", "五項檢查都通過，這份數字可以直接拿去跟部門收費。"],
+  mark:  ["可出帳，需標示", "可以發，但帳單上必須寫明推估的比例與方法。不標示就等於把不確定性藏起來。"],
+  block: ["需核准才放行", "不建議直接出帳。<b>這不是「不出帳」</b>——帳單還是要發，差別在於要有人簽名為下面沒過的那幾項負責，責任歸屬才留得下紀錄。"],
+};
+function renderGate() {
+  const g = DATA.gate; if (!g) return;
+  const [label, sub] = VERDICT[g.verdict] || VERDICT.mark;
+  const tag = document.getElementById("g-tag");
+  tag.textContent = label; tag.className = "tag " + g.verdict;
+  document.getElementById("g-sub").innerHTML = sub;
+  const box = document.getElementById("g-checks"); box.textContent = "";
+  g.checks.forEach(c => {
+    const row = document.createElement("div"); row.className = "chk";
+    const dot = document.createElement("span"); dot.className = "dot " + c.status; row.appendChild(dot);
+    const mid = document.createElement("div");
+    mid.innerHTML = `<div class="nm">${esc(c.name)}</div>`
+      + (c.detail ? `<div class="why">${esc(c.detail)}</div>` : "")
+      + `<div class="why">${esc(c.why || "")}</div><div class="pol">政策：${esc(c.policy || "")}</div>`;
+    row.appendChild(mid);
+    const v = document.createElement("div"); v.className = "v num";
+    v.textContent = c.value === null || c.value === undefined ? "—" : n2(c.value) + (c.unit || "");
+    row.appendChild(v);
+    box.appendChild(row);
+  });
+}
+
+// ---- 成熟度階梯 ----
+// 條件全部用實際資料判斷，不是寫死的清單——客戶要看到的是「我現在在哪」，不是一張漂亮的圖。
+function renderLadder() {
+  const box = document.getElementById("ladder"); if (!box) return;
+  box.textContent = "";
+  const cov = DATA.coverage || {}, rec = DATA.reconciliation || {}, rc = DATA.rateCard || {};
+  const unallocPct = DATA.total ? DATA.unallocated.separate / DATA.total * 100 : 0;
+  const rateOk = Object.values(rc.check || {}).length > 0
+    && Object.values(rc.check).every(v => v.status === "ok");
+  const steps = [
+    { t: "一、看得到成本", c: "叢集層級的花費有人在算。", done: DATA.total > 0,
+      next: "先把 OpenCost 與 Prometheus 裝起來。" },
+    { t: "二、分得出部門", c: `工作負載有部門標籤，成本找得到歸屬。目前無法分攤 ${n2(unallocPct)}%。`,
+      done: unallocPct <= 20,
+      next: `把未標籤的 namespace 標上 cost-center，把這個數字壓到 20% 以下（見第七節）。` },
+    { t: "三、數字可信", c: `量測覆蓋率 ${cov.pct === undefined ? "—" : cov.pct + "%"}、`
+        + `對帳差異 ${rec.driftPct === null || rec.driftPct === undefined ? "—" : rec.driftPct + "%"}、`
+        + `單價${rateOk ? "與系統一致" : "尚未對齊"}。`,
+      done: (cov.pct || 0) >= 99 && rec.status === "ok" && rateOk,
+      next: "先補監控缺口與對帳差異，數字站不住就不要開始收錢。" },
+    { t: "四、能真的收錢", c: "有版本化的價目表、有帳期封存、推估有標示來源。",
+      done: !!rc.loaded && SEALS.length > 0,
+      next: "把價目表納入版控、每天封存帳期，帳單才追溯得回去。" },
+  ];
+  // 前一階沒完成，後面就算條件湊巧成立也不該算數——但要誠實說明是「被卡住」
+  // 還是「條件本身沒達到」，否則會給出錯誤的下一步。
+  let blockedBy = null;
+  steps.forEach(st => {
+    const reached = st.done && !blockedBy;
+    const el = document.createElement("div");
+    el.className = "step " + (reached ? "done" : "todo");
+    let tail;
+    if (reached) tail = "";
+    else if (st.done) tail = `<div class="next">這一階的條件已經達成，但要先完成「${esc(blockedBy)}」——`
+      + `標籤沒治理好，再準的數字也分不對人。</div>`;
+    else tail = `<div class="next">下一步：${esc(st.next)}</div>`;
+    el.innerHTML = `<div class="mark2">${reached ? "✓" : (st.done ? "◐" : "○")}</div>`
+      + `<div><div class="t">${esc(st.t)}</div><div class="c">${esc(st.c)}</div>${tail}</div>`;
+    box.appendChild(el);
+    if (!reached && !blockedBy) blockedBy = st.t;
+  });
+}
+
+// ---- 五、資料可信度 ----
+function renderTrust() {
+  const tb = document.getElementById("tbl-trust"); tb.textContent = "";
+  const cov = DATA.coverage || {}, b = DATA.basis || {}, f = b.fill || null;
+  const rows = [
+    ["量測覆蓋率", cov.available === false ? "無法確認" : (cov.pct !== undefined ? cov.pct + "%" : "—"),
+     cov.available === false ? `連不上 Prometheus：${cov.reason || ""}`
+       : `缺 ${cov.gapMinutes || 0} 分鐘。抓取間隔 ${cov.stepSeconds || "?"} 秒`
+         + (cov.measuredStep ? "（跟 Prometheus 的 target 問出來的，不是猜的）" : "（問不到，用 60 秒估算）")],
+    ["推估佔比", (b.estimatedPct || 0) + "%",
+     f ? `用宣告量補了 ${n4(b.estimatedTotal)}，來源是快照器`
+         + (f.snapshotCoveragePct !== null && f.snapshotCoveragePct !== undefined
+            ? `（快照本身完整度 ${f.snapshotCoveragePct}%）` : "")
+       : "本期沒有使用任何推估，全部是實際量測"],
+    ["缺漏區段", (cov.gaps || []).length ? (cov.gaps || []).length + " 段" : "無",
+     (cov.gaps || []).map(g => `${g.start} → ${g.end}（${g.minutes} 分鐘）`).join("；") || "這段期間沒有量測中斷"],
+    ["對帳", DATA.reconciliation && DATA.reconciliation.driftPct !== null
+       ? DATA.reconciliation.driftPct + "%" : "—",
+     DATA.reconciliation && DATA.reconciliation.assets
+       ? `分攤總額 ${n4(DATA.reconciliation.allocated)} vs 資產成本 ${n4(DATA.reconciliation.assets)}`
+         + `（${Object.entries(DATA.reconciliation.byType || {}).map(([k, v]) => k + " " + n4(v)).join("、")}）`
+         + "。注意：對帳一定要用含閒置的總額，不含會看起來短少兩成以上"
+       : "讀不到資產成本，無法對帳"],
+  ];
+  if (f && (f.notes || []).length) rows.push(["補值的問題", f.notes.length + " 則", f.notes.join("；")]);
+  rows.forEach(([k, v, d]) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${esc(k)}</td><td class="num">${esc(v)}</td><td class="muted small">${esc(d)}</td>`;
+    tb.appendChild(tr);
+  });
+
+  const tt = document.getElementById("tbl-targets"); tt.textContent = "";
+  const targets = DATA.targets || [];
+  if (!targets.length) {
+    tt.innerHTML = '<tr><td colspan="5" class="muted small">讀不到 target 狀態（需要 Prometheus）</td></tr>';
+  } else targets.forEach(t => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${esc(t.job)}</td><td class="r num">${t.expected}</td>`
+      + `<td class="r num">${t.worstHealthy}</td><td class="r num">${t.degradedPct}%</td>`
+      + `<td>${t.status === "ok" ? "正常" : "<b style='color:var(--warn)'>曾經掉線</b>"}</td>`;
+    tt.appendChild(tr);
+  });
+}
+
+// ---- 六、帳期封存 ----
+let SEALS = [];
+function renderSeals() {
+  const tb = document.getElementById("tbl-seals"); tb.textContent = "";
+  if (!SEALS.length) {
+    tb.innerHTML = '<tr><td colspan="6" class="muted small">還沒有封存任何帳期。服務啟動後每小時會把已結束的日子封存起來。</td></tr>';
+    return;
+  }
+  SEALS.slice().reverse().forEach(x => {
+    const tr = document.createElement("tr");
+    const verdict = { ok: "可出帳", mark: "需標示", block: "<b style='color:#b42828'>需核准</b>" }[x.gate] || "—";
+    tr.innerHTML = `<td>${esc(x.day)}</td><td class="r num">${x.total === undefined ? "—" : n4(x.total)}</td>`
+      + `<td class="r num">${x.coveragePct === undefined || x.coveragePct === null ? "—" : x.coveragePct + "%"}</td>`
+      + `<td class="r num">${x.estimatedPct === undefined || x.estimatedPct === null ? "—" : x.estimatedPct + "%"}</td>`
+      + `<td>${verdict}</td>`
+      + `<td>${x.intact ? "✓ 未被改動" : "<b style='color:#b42828'>✗ 雜湊對不上</b>"}</td>`;
+    tb.appendChild(tr);
+  });
+}
+
+// ---- 七、下一步 ----
+// 全部從實際資料算出來，包含具體的名字與金額。泛泛的建議客戶自己也會寫。
+function renderActions() {
+  const box = document.getElementById("acts"); box.textContent = "";
+  const acts = [];
+  const unallocPct = DATA.total ? DATA.unallocated.separate / DATA.total * 100 : 0;
+  const rows = DATA.unallocRows || [];
+  const apps = rows.filter(r => !r.system), sys = rows.filter(r => r.system);
+  const sysTotal = sys.reduce((a, r) => a + r.total, 0);
+  if (apps.length) {
+    const top = apps.slice(0, 3);
+    acts.push([`把最大的 ${top.length} 個未標籤 namespace 標上 <code>cost-center</code>`,
+      `這些是<b>應用的</b> namespace，卻沒有部門歸屬：`
+      + `${top.map(r => `<b>${esc(r.ns)}</b>（${n4(r.total)}）`).join("、")}。`
+      + `標籤<b>不會回溯</b>，所以越早標，可用的歷史資料越多。`
+      + `配合 admission policy 強制新工作負載一定要帶標籤，這個數字才不會再長回來。`]);
+  }
+  if (sysTotal > 0) {
+    acts.push(["替平台共用成本訂一條分攤規則",
+      `系統元件（${sys.slice(0, 3).map(r => esc(r.ns)).join("、")}${sys.length > 3 ? " 等" : ""}）`
+      + `本期 ${n4(sysTotal)}，佔 ${n2(DATA.total ? sysTotal / DATA.total * 100 : 0)}%。`
+      + `<b>這些不該標成某個部門</b>——監控、網路、安全元件是全公司在用的。`
+      + `但它也不能就這樣留在「無法分攤」裡：那等於平台團隊無聲地付掉。`
+      + `常見做法是按各部門的用量比例攤回去，或者編列成平台的固定預算。重點是<b>要有一條講好的規則</b>。`]);
+  }
+  // 同一個工作負載如果在區間內改過標籤，OpenCost 會回兩列（前段未標籤、後段已標籤）。
+  // 建議清單裡出現兩次同樣的名字只會讓人困惑，所以先按 namespace/名稱合併。
+  const merged = {};
+  (DATA.workloads || []).forEach(w => {
+    const k = w.ns + "/" + w.name;
+    const m = merged[k] || (merged[k] = { ...w, total: 0, _cpuW: 0, _effW: 0 });
+    m.total += w.total;
+    m._cpuW += (w.cpuReq || 0) * (w.total || 0);
+    m._effW += (w.cpuEff || 0) * (w.total || 0);
+  });
+  const waste = Object.values(merged)
+    .map(m => ({ ...m, cpuEff: m.total ? m._effW / m.total : 0, cpuReq: m.total ? m._cpuW / m.total : 0 }))
+    .filter(w => w.cpuReq > 0 && w.cpuEff < 0.2)
+    .sort((a, b) => b.total - a.total).slice(0, 3);
+  if (waste.length) {
+    acts.push(["檢視申請量遠高於用量的工作負載",
+      waste.map(w => `<b>${esc(w.ns)}/${esc(w.name)}</b> 申請 ${w.cpuReq.toFixed(3)} 核、`
+        + `實際用 ${w.cpuUse < 0.001 ? "不到 0.001" : w.cpuUse} 核`
+        + `（效率 ${(w.cpuEff * 100).toFixed(1)}%，本期 ${n4(w.total)}、月推估 ${n4(w.total * MONTH)}）`).join("；")
+      + `。<b>先問清楚再砍</b>——尖峰備援與批次工作本來就長這樣，砍錯會出事。`]);
+  }
+  const idlePct = DATA.total ? DATA.idle / DATA.total * 100 : 0;
+  if (idlePct > 20) {
+    acts.push(["處理閒置產能",
+      `閒置佔 ${n2(idlePct)}%（${n4(DATA.idle)}，月推估 ${n4(DATA.idle * MONTH)}）。`
+      + `這代表節點買得比實際需要大，或者排程不夠緊密。`
+      + `這筆錢目前${document.getElementById("idle-shr") && document.getElementById("idle-shr").checked ? "由各部門分攤" : "由平台團隊吸收"}——`
+      + `先決定它該由誰扛，再決定要不要縮機器。`]);
+  }
+  const bad = (DATA.gate && DATA.gate.checks || []).filter(c => c.status === "block" || c.status === "mark");
+  if (bad.length) {
+    acts.push(["先把出帳關卡沒過的項目處理掉",
+      bad.map(c => `<b>${esc(c.name)}</b>（${c.status === "block" ? "擋帳" : "需標示"}）`).join("、")
+      + `。在這些處理完之前，建議先跑 showback（只給看、不收錢），`
+      + `讓各部門自己去對、去修標籤，數字被信任了再切到真的分帳。`]);
+  }
+  if (!acts.length) acts.push(["目前沒有明顯待辦",
+    "標籤覆蓋、資料完整度、對帳都在合理範圍。接下來可以把重心放在單位經濟學——每筆訂單、每個客戶的成本。"]);
+  acts.forEach(([t, d], i) => {
+    const el = document.createElement("div"); el.className = "act";
+    el.innerHTML = `<span class="n">${i + 1}.</span> <b>${t}</b><div class="g">${d}</div>`;
+    box.appendChild(el);
+  });
+}
+
+function renderAll() {
+  renderGate(); renderLadder(); renderDept(); renderEnv(); renderWorkloads();
+  renderUnalloc(); renderTrust(); renderSeals(); renderActions(); renderRates();
+}
 
 function renderMeta() {
   const w = DATA.window;
@@ -544,6 +892,11 @@ async function load(win) {
     DATA = await res.json();
     DATA.depts.forEach((d, i) => { COLOR[d.id] = `var(${COLOR_VARS[i % COLOR_VARS.length]})`; });
     MONTH = DATA.window.minutes ? (30 * 24 * 60) / DATA.window.minutes : 1;
+    // 封存清單是另一支端點：它跟查詢區間無關（帳期就是帳期），失敗也不該讓整頁掛掉
+    try {
+      const sres = await fetch("api/seals", { cache: "no-store" });
+      SEALS = sres.ok ? ((await sres.json()).seals || []) : [];
+    } catch (e) { SEALS = []; }
     buildSegs(); renderMeta(); renderAll();
   } catch (e) {
     document.getElementById("m-fresh").textContent = "讀取失敗：" + e.message;

@@ -9,6 +9,9 @@
 !/app/
 !/app/app.py
 !/app/index.html
+!/app/billing.py
+!/app/test_billing.py
+!/app/ratecard.json
 !/k8s/
 !/k8s/*.yaml
 !/docs/
