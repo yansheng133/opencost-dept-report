@@ -16,3 +16,8 @@
 !/examples/
 !/examples/*.yaml
 !/examples/*.sh
+!/snapshotter/
+!/snapshotter/*.py
+!/snapshotter/*.yaml
+!/snapshotter/*.sh
+!/snapshotter/*.md

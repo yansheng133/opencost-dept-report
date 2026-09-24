@@ -149,6 +149,12 @@
     .row .track { grid-column: 1; }
     .row .val { grid-column: 2; text-align: left; min-width: 0; }
   }
+  .cov { display:none; margin: 0 0 22px; padding: 12px 14px; border:1px solid var(--rule);
+         border-left:3px solid var(--warn); border-radius:6px; background:var(--card);
+         font-size:13px; color:var(--ink-2); line-height:1.6; }
+  .cov.on { display:block; }
+  .cov b { color:var(--ink); font-weight:600; }
+  .cov .gaps { margin-top:6px; color:var(--ink-3); font-variant-numeric: tabular-nums; }
 </style>
 
 <div class="wrap">
@@ -162,6 +168,10 @@
       <span>資料 <b id="m-fresh">載入中…</b></span>
     </div>
   </header>
+
+  <!-- 量測缺漏的提示。缺資料不是「畫面空一塊」，是「金額少算但看起來正常」，
+       所以要講在最前面，而不是藏在附註裡。 -->
+  <div class="cov" id="cov"></div>
 
   <section>
     <div class="totals">
@@ -504,6 +514,27 @@ function renderMeta() {
   fresh.style.color = DATA.stale ? "var(--warn)" : "";
   const cl = document.getElementById("m-cluster");
   if (cl) cl.textContent = DATA.cluster || "—";
+  const cov = document.getElementById("cov"), c = DATA.coverage;
+  if (cov) {
+    cov.className = "cov";
+    if (c && c.available === false) {
+      cov.className = "cov on";
+      cov.innerHTML = `<b>無法確認資料完整度</b>：連不上 Prometheus（${esc(c.reason || "")}）。`
+        + `下面的金額可能少算了沒量到的時段，但目前無法判斷少了多少。`;
+    } else if (c && c.available && c.pct < 99.5) {
+      cov.className = "cov on";
+      const gaps = (c.gaps || []).map(g => `${g.start} → ${g.end}（${g.minutes} 分鐘）`).join("；");
+      cov.innerHTML = `<b>本期量測覆蓋率 ${c.pct}%</b>，缺少 ${c.gapMinutes} 分鐘的資料。`
+        + `這段期間成本照樣發生（節點在跑、機器在折舊），所以下面的金額是<b>少算</b>，不是沒發生。`
+        + `正式出帳前要先決定缺漏怎麼補，並在帳單上標示。`
+        + (c.measuredStep ? "" : "（抓取間隔問不到，用 60 秒估算，覆蓋率僅供參考）")
+        + (gaps ? `<div class="gaps">缺漏區段：${gaps}</div>` : "");
+    }
+  }
+}
+
+function esc(t) {
+  return String(t).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 }
 
 async function load(win) {

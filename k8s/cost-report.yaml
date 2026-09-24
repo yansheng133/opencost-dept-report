@@ -60,6 +60,8 @@ spec:
               value: 24h
             - name: CLUSTER_LABEL
               value: rke2
+            - name: PROM_URL            # 量資料完整度用；連不上只是少一塊資訊，報表照常
+              value: http://prometheus-server.prometheus-system.svc.cluster.local:80
             - name: PYTHONUNBUFFERED
               value: "1"
           ports:

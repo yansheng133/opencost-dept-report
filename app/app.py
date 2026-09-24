@@ -21,6 +21,7 @@
   - 單價由資料反推（金額 ÷ 用量），不寫死，換單價不必改程式。
   - 這支服務沒有登入機制：誰連得到就看得到全部部門。要限制存取，認證要放在它前面。
 """
+import calendar
 import json
 import os
 import threading
@@ -38,6 +39,12 @@ LISTEN_PORT = int(os.environ.get("LISTEN_PORT", "8080"))
 CLUSTER_LABEL = os.environ.get("CLUSTER_LABEL", "")
 HTTP_TIMEOUT = int(os.environ.get("HTTP_TIMEOUT", "30"))
 UI_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
+# 量測覆蓋率要直接問 Prometheus（OpenCost 自己不會說「這段我沒量到」）。連不上就只是少一塊資訊。
+PROM_URL = os.environ.get("PROM_URL", "http://prometheus-server.prometheus-system.svc.cluster.local:80").rstrip("/")
+COVERAGE_JOB = os.environ.get("COVERAGE_JOB", "opencost")
+# 覆蓋率只是加值資訊，逾時要短。位址設錯的話，用主逾時（30 秒）會讓每次更新多卡一分鐘，
+# 變成「為了知道資料完不完整，反而拖慢了資料本身」。
+PROM_TIMEOUT = int(os.environ.get("PROM_TIMEOUT", "5"))
 
 DEPT_KEYS = ("mfg", "rd", "it")          # 只是預設順序；實際部門以資料為準
 SYSTEM_NS = [p.strip() for p in os.environ.get(
@@ -74,6 +81,107 @@ def _round(v, n=4):
         return round(float(v), n)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _prom(path, params):
+    url = f"{PROM_URL}{path}?{urllib.parse.urlencode(params)}"
+    with urllib.request.urlopen(url, timeout=PROM_TIMEOUT) as r:
+        body = json.load(r)
+    if body.get("status") != "success":
+        raise RuntimeError(f"Prometheus 回應 {body.get('status')}: {body.get('error')}")
+    return body.get("data") or {}
+
+
+def _scrape_interval():
+    """從 Prometheus 的 target 直接問抓取間隔，不要用猜的。
+
+    猜錯的話覆蓋率會系統性地偏高或偏低，而且不會有任何徵兆——
+    帳單上「99% 完整」如果其實是 66%，比沒有這個數字更糟。
+    """
+    try:
+        for t in _prom("/api/v1/targets", {"state": "active"}).get("activeTargets", []):
+            if t.get("labels", {}).get("job") == COVERAGE_JOB:
+                s = t.get("scrapeInterval", "")
+                if s.endswith("s"):
+                    return float(s[:-1])
+                if s.endswith("m"):
+                    return float(s[:-1]) * 60
+    except (urllib.error.URLError, OSError, RuntimeError, ValueError, KeyError):
+        pass
+    return None
+
+
+def coverage(start_iso, end_iso):
+    """這段區間到底有多少時間真的量到了，缺的又缺在哪裡。
+
+    沒有這個數字，缺漏就是無聲的：報表照樣產出，只是少算了一些錢，
+    而且沒有人會發現。有了它，才談得上「要不要用推估補、補多少」。
+    """
+    if not PROM_URL:
+        return None
+    try:
+        start = _parse_iso(start_iso)
+        end = _parse_iso(end_iso)
+    except (TypeError, ValueError):
+        return None
+    span = end - start
+    if span <= 0:
+        return None
+    step = _scrape_interval()
+    measured_step = step is not None
+    if step is None:
+        step = 60.0
+    # 點數上限：7 天 × 60 秒會是一萬多點，沒必要。放粗只會漏掉比 step 更短的斷層。
+    step = max(step, span / 1500)
+    try:
+        data = _prom("/api/v1/query_range", {
+            "query": f'up{{job="{COVERAGE_JOB}"}}', "start": start, "end": end, "step": int(step)})
+        series = data.get("result") or []
+    except (urllib.error.URLError, OSError, RuntimeError, ValueError) as e:
+        return {"available": False, "reason": str(e)}
+
+    expected = int(span // step) + 1
+    seen = {}
+    for s in series:
+        for ts, val in s.get("values", []):
+            if val == "1":      # 同一個 job 可能有多個 target，任何一個有回報就算量到了
+                seen[int((float(ts) - start) // step)] = True
+    up = len(seen)
+
+    gaps, run_start = [], None
+    for i in range(expected):
+        missing = not seen.get(i, False)
+        if missing and run_start is None:
+            run_start = i
+        elif not missing and run_start is not None:
+            gaps.append((run_start, i))
+            run_start = None
+    if run_start is not None:
+        gaps.append((run_start, expected))
+
+    def iso(idx):
+        return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(start + idx * step))
+
+    return {
+        "available": True,
+        "pct": _round(up / expected * 100, 2) if expected else 0.0,
+        "measuredStep": measured_step,          # False = 沒問到抓取間隔，用了預設值 60s
+        "stepSeconds": int(step),
+        "samples": {"found": up, "expected": expected},
+        # 只列最大的幾段：帳單上要的是「缺在哪、有多久」，不是逐點清單
+        "gaps": [{"start": iso(a), "end": iso(b), "minutes": _round((b - a) * step / 60, 1)}
+                 for a, b in sorted(gaps, key=lambda g: g[0] - g[1])[:5]],
+        "gapMinutes": _round(sum((b - a) * step for a, b in gaps) / 60, 1),
+    }
+
+
+def _parse_iso(s):
+    """OpenCost 的時間字串換成 epoch 秒。用 timegm，不要用 mktime——後者會套上本機時區，
+    容器是 UTC、你的筆電是 UTC+8，差 8 小時的斷層報告完全看不出來是時區問題。"""
+    txt = s.strip().replace("+0000", "Z").replace("+00:00", "Z")
+    if "." in txt:
+        txt = txt.split(".")[0] + "Z"
+    return calendar.timegm(time.strptime(txt, "%Y-%m-%dT%H:%M:%SZ"))
 
 
 def build_report(window):
@@ -164,6 +272,7 @@ def build_report(window):
             "minutes": _round(any_dept.get("minutes"), 1),
         },
         "cluster": CLUSTER_LABEL,
+        "coverage": coverage(any_dept.get("start"), any_dept.get("end")),
         "rates": {
             "cpu": implied("cpuCost", "cpuCoreHours"),
             "ram": implied("ramCost", "ramByteHours", GIB),

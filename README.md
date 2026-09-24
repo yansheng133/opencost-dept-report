@@ -19,6 +19,7 @@ OpenCost 自己的 UI 是給平台團隊看的：它按 namespace 和工作負�
 | 每個工作負載付了多少、用了多少 | 申請量對實際用量，標出可回收的對象；也標出「效率低但其實在工作」的例外 |
 | 無法分攤的成本 | 沒有部門標籤的部分有多大，就是標籤治理的量化指標 |
 | 計價依據 | 單價、計價單位、本期用量；單價由資料反推，不寫死在程式裡 |
+| **資料完整度** | 本期有多少時間真的量到了、缺在哪幾段。低於 99.5% 會在畫面最上方警告 |
 
 ## 這個服務做了什麼、沒做什麼
 
@@ -26,7 +27,7 @@ OpenCost 自己的 UI 是給平台團隊看的：它按 namespace 和工作負�
 |---|---|
 | 查 OpenCost 的 allocation API，整理成部門視角 | 不自己算成本，也不改 OpenCost 的設定 |
 | 背景定期更新，畫面讀快取 | 不寫入任何資料，沒有資料庫 |
-| OpenCost 連不上時沿用上一份資料並在畫面標示 | 不會自己補資料 |
+| OpenCost 連不上時沿用上一份資料並在畫面標示 | 不會自己補資料（缺多少會講，補不補是政策） |
 | 單價由資料反推（金額 ÷ 用量） | 不在程式裡寫死單價 |
 | **沒有登入機制** | **不做認證與授權** |
 
@@ -80,6 +81,9 @@ docker push <registry>/cost-report:0.1.0
 | `DEFAULT_WINDOW` | `24h` | 預設區間 |
 | `CLUSTER_LABEL` | 空 | 畫面上顯示的叢集名稱 |
 | `SYSTEM_NS_PREFIXES` | `kube-system,cattle-,…` | 這些 namespace 的元件不列進工作負載表（仍計入「無法分攤」） |
+| `PROM_URL` | `http://prometheus-server.prometheus-system.svc.cluster.local:80` | 量資料完整度用。連不上只是少一塊資訊，報表照常 |
+| `COVERAGE_JOB` | `opencost` | 用哪個 scrape job 判斷「這段有沒有量到」 |
+| `PROM_TIMEOUT` | `5` | 問 Prometheus 的逾時。刻意比主逾時短：位址設錯不該拖慢報表本身 |
 
 ## 端點
 
@@ -98,6 +102,8 @@ docker push <registry>/cost-report:0.1.0
 | `examples/precheck.sh` | demo 前的健康檢查，逐項 PASS／FAIL |
 | `examples/export-by-dept.sh` | 依部門匯出 CSV，`--dept` 可出單一部門逐一工作負載 |
 | `docs/opencost-notes.md` | **實機量測過的 OpenCost 行為與陷阱**，比這份 README 更值得先看 |
+| `docs/data-gaps.md` | **監控斷線時成本怎麼分攤**：降級階梯、來源標記、出帳門檻 |
+| `snapshotter/` | 宣告量快照器：只讀 API server 的第二份分攤依據，Prometheus 掛掉時還有數字可用 |
 
 ## 需求
 

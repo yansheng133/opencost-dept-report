@@ -1,0 +1,96 @@
+# 宣告量快照器：Prometheus 掛掉時的第二份分攤依據。
+# 它只讀 API server（pods／namespaces），不碰 Prometheus，也不需要 registry
+# （程式碼由 deploy.sh 放進 ConfigMap，掛進官方 Python 映像檔執行）。
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cost-snapshotter
+  namespace: cost-report
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cost-snapshotter
+rules:
+  # 只要 metadata 與 spec.resources，不需要任何寫入權限，也不碰 secret
+  - apiGroups: [""]
+    resources: [pods, namespaces]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cost-snapshotter
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: cost-snapshotter}
+subjects:
+  - {kind: ServiceAccount, name: cost-snapshotter, namespace: cost-report}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cost-snapshots
+  namespace: cost-report
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 1Gi}}
+  # storageClassName: 留空用叢集預設。實測 5 分鐘一次、40 個 Pod 約每天 2 MiB
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cost-snapshotter
+  namespace: cost-report
+  labels: {app: cost-snapshotter}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}      # RWO 的 PVC 只能有一個寫入者，滾動更新會卡住
+  selector: {matchLabels: {app: cost-snapshotter}}
+  template:
+    metadata:
+      labels: {app: cost-snapshotter}
+    spec:
+      serviceAccountName: cost-snapshotter
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000             # 沒有這個，非 root 的行程寫不進 local-path 的目錄
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: snapshotter
+          image: registry.suse.com/bci/python:3.12
+          command: ["python3", "/app/snapshot.py"]
+          env:
+            - {name: OUT_DIR, value: /data}
+            - {name: INTERVAL, value: "300"}
+            - {name: DEPT_LABEL, value: cost-center}
+            - {name: ENV_LABEL, value: env}
+            - {name: RETENTION_DAYS, value: "35"}
+            - {name: PYTHONUNBUFFERED, value: "1"}
+          livenessProbe:
+            # 探的是「還寫得出快照嗎」，不是「行程還在嗎」。
+            # 行程活著卻停止寫入，才是會無聲吃掉分攤依據的那種壞法。
+            exec:
+              command:
+                - python3
+                - -c
+                - import os,time,sys;sys.exit(0 if time.time()-os.path.getmtime('/data/.heartbeat')<3*int(os.environ['INTERVAL']) else 1)
+            initialDelaySeconds: 120
+            periodSeconds: 60
+            failureThreshold: 2
+          resources:
+            requests: {cpu: 10m, memory: 64Mi}
+            limits: {memory: 128Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          volumeMounts:
+            - {name: code, mountPath: /app, readOnly: true}
+            - {name: data, mountPath: /data}
+      volumes:
+        - name: code
+          configMap: {name: cost-snapshotter-code}
+        - name: data
+          persistentVolumeClaim: {claimName: cost-snapshots}
