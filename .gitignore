@@ -19,6 +19,9 @@
 !/k8s/*.yaml
 !/docs/
 !/docs/*.md
+!/docs/dockerhub/
+!/docs/dockerhub/*.md
+!/docs/dockerhub/*.sh
 !/examples/
 !/examples/*.yaml
 !/examples/*.sh

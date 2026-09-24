@@ -156,6 +156,7 @@ REGISTRY=<你的帳號> bash build-images.sh --push
 | `app/test_billing.py` | 計價政策的測試，`python3 test_billing.py`，不需要叢集 |
 | `snapshotter/` | 宣告量快照器：只讀 API server 的第二份分攤依據，Prometheus 掛掉時還有數字可用 |
 | `build-images.sh` | 建置並推送兩個多架構映像檔（amd64／arm64） |
+| `docs/dockerhub/` | Docker Hub 的倉庫描述與更新腳本（描述只放導向，不複製 README——那會變成第三個要同步的副本） |
 | `Dockerfile`、`snapshotter/Dockerfile` | 兩個服務各自的映像檔定義 |
 
 ## 映像檔
