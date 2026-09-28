@@ -149,5 +149,70 @@ ok(empty["checks"][0]["status"] == "block", "沒有資料這一項本身要是 b
 has = billing.billing_gate(99.9, 0.0, billing.reconcile(100, 100), rc, 5.0, has_data=True)
 ok(has["verdict"] == "ok", "有資料且都達標時仍然是可出帳（新檢查不可以誤擋）", has["verdict"])
 
+# ── 月報：把封存的帳期按月彙總 ────────────────────────────────────────────
+tmp2 = tempfile.mkdtemp()
+try:
+    sd = os.path.join(tmp2, "seals")
+
+    def seal(day, total, gate="ok", cov=100.0, est=0.0):
+        billing.seal_day(sd, day, {
+            "totals": {"total": total, "idle": total * 0.2, "unallocated": total * 0.3},
+            "depts": [{"id": "mfg", "total": total * 0.3}, {"id": "rd", "total": total * 0.2}],
+            "coverage": {"pct": cov, "gapMinutes": (100 - cov) * 14.4},
+            "basis": {"estimatedTotal": est}, "gate": gate})
+
+    # 2026-08 完整的一個月（31 天）
+    for d in range(1, 32):
+        seal(f"2026-08-{d:02d}", 10.0, gate="ok")
+    months = billing.aggregate_periods(sd, today="2026-09-15")
+    aug = [m for m in months if m["month"] == "2026-08"][0]
+    ok(aug["sealedDays"] == 31 and not aug["missingDays"], "完整的月份沒有缺日", aug["sealedDays"])
+    ok(abs(aug["total"] - 310.0) < 1e-6, "月總額是每日加總", aug["total"])
+    ok(abs(aug["depts"]["mfg"] - 93.0) < 1e-6, "部門金額也是加總", aug["depts"])
+    ok(aug["verdict"] == "ok", "每天都 ok → 整個月可出帳", aug["verdict"])
+
+    # 缺一天：20 天的加總不是一個月的帳單
+    billing.seal_day  # noqa
+    sd2 = os.path.join(tmp2, "seals2")
+    for d in list(range(1, 15)) + list(range(16, 32)):      # 少 8/15
+        billing.seal_day(sd2, f"2026-08-{d:02d}", {
+            "totals": {"total": 10.0}, "depts": [], "coverage": {"pct": 100.0},
+            "basis": {"estimatedTotal": 0}, "gate": "ok"})
+    aug2 = [m for m in billing.aggregate_periods(sd2, today="2026-09-15") if m["month"] == "2026-08"][0]
+    ok(aug2["missingDays"] == ["2026-08-15"], "缺的日子要被列出來", aug2["missingDays"])
+    ok(aug2["verdict"] == "block", "月份缺日 → 不可出帳（加總不是帳單）", aug2["verdict"])
+
+    # 有一天 block，整個月就 block
+    sd3 = os.path.join(tmp2, "seals3")
+    for d in range(1, 32):
+        billing.seal_day(sd3, f"2026-08-{d:02d}", {
+            "totals": {"total": 10.0}, "depts": [], "coverage": {"pct": 100.0},
+            "basis": {"estimatedTotal": 0}, "gate": "block" if d == 7 else "ok"})
+    aug3 = [m for m in billing.aggregate_periods(sd3, today="2026-09-15") if m["month"] == "2026-08"][0]
+    ok(aug3["verdict"] == "block", "有一天需要核准 → 整個月繼承", aug3["verdict"])
+
+    # 當月還沒過完：還沒到的日子不算缺
+    sd4 = os.path.join(tmp2, "seals4")
+    for d in range(1, 11):
+        billing.seal_day(sd4, f"2026-09-{d:02d}", {
+            "totals": {"total": 10.0}, "depts": [], "coverage": {"pct": 100.0},
+            "basis": {"estimatedTotal": 0}, "gate": "ok"})
+    sep = [m for m in billing.aggregate_periods(sd4, today="2026-09-10") if m["month"] == "2026-09"][0]
+    ok(not sep["missingDays"], "當月只算到今天為止，未來的日子不算缺", sep["missingDays"])
+    ok(sep["complete"] is False and sep["verdict"] == "mark",
+       "當月是累計值，不是完整帳單", (sep["complete"], sep["verdict"]))
+
+    # 封存被竄改 → 整個月擋下來
+    with open(os.path.join(sd4, "2026-09-03.json")) as f:
+        doc = json.load(f)
+    doc["totals"]["total"] = 999.0
+    with open(os.path.join(sd4, "2026-09-03.json"), "w") as f:
+        json.dump(doc, f, ensure_ascii=False, sort_keys=True)
+    sep2 = [m for m in billing.aggregate_periods(sd4, today="2026-09-10") if m["month"] == "2026-09"][0]
+    ok(sep2["verdict"] == "block" and "2026-09-03" in sep2["tampered"],
+       "有封存檔被改過 → 整個月不可出帳", sep2.get("tampered"))
+finally:
+    shutil.rmtree(tmp2, ignore_errors=True)
+
 print(f"\n{sum(R)}/{len(R)} 通過")
 sys.exit(0 if all(R) else 1)

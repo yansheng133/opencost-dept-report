@@ -12,6 +12,7 @@
 
 只用標準函式庫，而且刻意不碰網路與 Kubernetes——這樣才測得動（見 test_billing.py）。
 """
+import calendar
 import hashlib
 import json
 import os
@@ -282,6 +283,93 @@ def seal_day(seal_dir, day, payload):
         json.dump(body, f, ensure_ascii=False, sort_keys=True)
     os.replace(tmp, path)       # 先寫再改名：讀的人不會看到寫到一半的帳
     return {"status": "sealed", "path": path, "sha256": digest}
+
+
+def _days_in_month(ym):
+    y, m = int(ym[:4]), int(ym[5:7])
+    return calendar.monthrange(y, m)[1]
+
+
+def aggregate_periods(seal_dir, today=None):
+    """把封存的帳期按月彙總成月報。
+
+    為什麼不直接查 Prometheus：它的 retention 有限（這個環境是 7 天），
+    幾個月前的資料根本查不到；就算查得到，重查也可能因為壓縮與過期而得到不同答案。
+    封存不受 retention 影響，而且是凍結的——這正是當初做封存的理由。
+
+    **沒有封存的日子要明白列出來，不可以把有的加總就說成「這個月」。**
+    20 天的資料加起來不是一個月的帳單，而兩者在畫面上長得一模一樣。
+    """
+    today = today or time.strftime("%Y-%m-%d", time.gmtime())
+    months = {}
+    for row in list_seals(seal_dir):
+        day = row.get("day") or ""
+        if len(day) != 10:
+            continue
+        doc = read_seal(seal_dir, day)
+        if not doc:
+            continue
+        ym = day[:7]
+        m = months.setdefault(ym, {
+            "month": ym, "days": [], "total": 0.0, "idle": 0.0, "unallocated": 0.0,
+            "estimated": 0.0, "depts": {}, "worstGate": "ok", "tampered": [],
+            "minCoverage": None, "gapMinutes": 0.0,
+        })
+        totals = doc.get("totals") or {}
+        m["days"].append(day)
+        m["total"] += float(totals.get("total") or 0)
+        m["idle"] += float(totals.get("idle") or 0)
+        m["unallocated"] += float(totals.get("unallocated") or 0)
+        m["estimated"] += float((doc.get("basis") or {}).get("estimatedTotal") or 0)
+        for d in doc.get("depts") or []:
+            m["depts"][d["id"]] = round(m["depts"].get(d["id"], 0) + float(d.get("total") or 0), 4)
+        order = {"ok": 1, "mark": 2, "block": 3}
+        if order.get(doc.get("gate"), 1) > order.get(m["worstGate"], 1):
+            m["worstGate"] = doc.get("gate")
+        cov = (doc.get("coverage") or {}).get("pct")
+        if cov is not None:
+            m["minCoverage"] = cov if m["minCoverage"] is None else min(m["minCoverage"], cov)
+        m["gapMinutes"] += float((doc.get("coverage") or {}).get("gapMinutes") or 0)
+        if row.get("intact") is False:
+            m["tampered"].append(day)
+
+    out = []
+    for ym in sorted(months):
+        m = months[ym]
+        total_days = _days_in_month(ym)
+        # 當月只算到今天為止：還沒過完的日子不算「缺」
+        last = min(total_days, int(today[8:10])) if ym == today[:7] else total_days
+        expected = [f"{ym}-{d:02d}" for d in range(1, last + 1)]
+        missing = [d for d in expected if d not in m["days"]]
+        m["sealedDays"] = len(m["days"])
+        m["expectedDays"] = len(expected)
+        m["monthDays"] = total_days
+        m["missingDays"] = missing
+        m["complete"] = not missing and ym != today[:7]
+        m["total"] = round(m["total"], 4)
+        m["idle"] = round(m["idle"], 4)
+        m["unallocated"] = round(m["unallocated"], 4)
+        m["estimated"] = round(m["estimated"], 4)
+        m["estimatedPct"] = round(m["estimated"] / m["total"] * 100, 2) if m["total"] else 0.0
+        m["gapMinutes"] = round(m["gapMinutes"], 1)
+        # 月層級的結論：任何一天不能出帳，整個月就不能出帳；缺日子就更不用說
+        if m["tampered"]:
+            m["verdict"] = "block"
+            m["reason"] = "有封存檔的雜湊對不上：" + "、".join(m["tampered"])
+        elif missing:
+            m["verdict"] = "block"
+            m["reason"] = f"缺 {len(missing)} 天沒有封存，{len(m['days'])} 天的加總不是一個月的帳單"
+        elif not m["complete"]:
+            m["verdict"] = "mark" if m["worstGate"] != "block" else "block"
+            m["reason"] = "這個月還沒過完，目前是累計值"
+        else:
+            m["verdict"] = m["worstGate"]
+            m["reason"] = {"ok": "每一天都通過出帳關卡",
+                           "mark": "有日子需要標示推估",
+                           "block": "有日子需要核准才能放行"}.get(m["worstGate"], "")
+        m["days"].sort()
+        out.append(m)
+    return out
 
 
 def read_seal(seal_dir, day):

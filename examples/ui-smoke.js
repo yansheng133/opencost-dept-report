@@ -200,6 +200,25 @@ function check(ok, what, detail) {
   }
 
   // ── 使用率折線圖 ──
+  // 先挑資料點最多的那個區間再測。環境有斷層的時候，預設區間可能只剩兩三個點，
+  // 折線相關的檢查會整組跳過——**一個會自動跳過的檢查，等於隨時可能永遠不跑。**
+  const best = { win: null, n: -1 };
+  for (const w of winIds) {
+    await page.click(`label:has(#win-${w})`);
+    await page.waitForTimeout(3000);
+    // 注意：頁面裡的 DATA 是 let 宣告的，**不是 window 的屬性**（那是 var 才有的行為）。
+    // 寫成 window.DATA 會永遠拿到 undefined，於是這個檢查在空資料上安靜地通過。
+    const n = await page.evaluate(() =>
+      (typeof DATA !== "undefined" && DATA.series
+        ? DATA.series.points.filter(p => p.depts).length : 0));
+    if (n > best.n) { best.n = n; best.win = w; }
+  }
+  if (best.win) {
+    console.log(`INFO  折線圖用 ${best.win} 區間測（${best.n} 個資料點，是三個區間裡最多的）`);
+    await page.click(`label:has(#win-${best.win})`);
+    await page.waitForTimeout(3000);
+  }
+
   const chart = await page.evaluate(() => {
     const svg = document.getElementById("ln-svg");
     if (!svg) return null;
@@ -240,7 +259,9 @@ function check(ok, what, detail) {
     const broke = await page.evaluate(() => {
       const before = document.querySelectorAll("#ln-svg path.ln-path").length;
       const withData = DATA.series.points.filter(p => p.depts);
-      if (withData.length < 3) return null;
+      // 要 5 個點以上才測得準：只有 3 個點時，挖掉中間那個會讓兩邊各剩一個，
+      // 而單點是畫成圓點不是路徑——路徑數反而變少，看起來像「沒有斷開」。
+      if (withData.length < 5) return null;
       const mid = DATA.series.points.indexOf(withData[Math.floor(withData.length / 2)]);
       const keep = DATA.series.points[mid].depts;
       DATA.series.points[mid].depts = null;
@@ -250,13 +271,43 @@ function check(ok, what, detail) {
       renderUsage();
       return { before, after };
     });
-    if (broke) {
+    if (!broke) {
+      console.log("SKIP  折線斷開（這次的序列不到 5 個資料點，測不準）");
+    } else {
       check(broke.after > broke.before,
             "資料缺一段時折線會斷開，不會內插（把兩端連起來等於偽造那段量測）",
             JSON.stringify(broke));
     }
   } else {
     console.log("SKIP  使用率折線圖（頁面上沒有這個區塊）");
+  }
+
+  // ── 月報：來源是封存，不是即時查詢 ──
+  const months = await page.evaluate(() => {
+    const cards = [...document.querySelectorAll("#months .mon")];
+    if (!cards.length) return { none: true, text: document.getElementById("months").innerText };
+    return {
+      count: cards.length,
+      first: cards[0].innerText,
+      data: (typeof MONTHS !== "undefined" ? MONTHS : []).map(
+        m => ({ month: m.month, verdict: m.verdict,
+                sealed: m.sealedDays, missing: (m.missingDays || []).length })),
+    };
+  });
+  if (months.none) {
+    check(/還沒有任何封存/.test(months.text || ""), "沒有封存時，月報要說明原因而不是空白", months.text);
+  } else {
+    check(months.count > 0, "月報有卡片", JSON.stringify(months.data));
+    // 缺日子的月份**不可以**顯示成可出帳——N 天的加總不是一個月的帳單
+    check((months.data || []).length > 0, "讀得到月報的資料（空陣列會讓下面的檢查無聲通過）",
+          JSON.stringify(months.data));
+    const bad = (months.data || []).filter(m => m.missing > 0 && m.verdict === "ok");
+    check(bad.length === 0, "缺日子的月份不可以判定為可出帳", JSON.stringify(bad));
+    // 缺漏必須在畫面上講出來，不能只是數字小一點
+    const withMissing = (months.data || []).find(m => m.missing > 0);
+    if (withMissing) {
+      check(/沒有封存的日子/.test(months.first), "缺漏的日子要在卡片上列出來", months.first.slice(0, 120));
+    }
   }
 
   check(errors.length === 0, "沒有 JavaScript 錯誤", errors.join(" | "));

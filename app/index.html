@@ -280,6 +280,19 @@
   .ln-tip .r { display: flex; align-items: center; gap: 7px; margin-top: 3px; }
   .ln-tip .r i { width: 9px; height: 9px; border-radius: 2px; flex: none; }
   .ln-note { font-size: 12px; color: var(--ink-3); margin-top: 8px; line-height: 1.6; }
+  /* ── 月報 ── */
+  .mon { border:1px solid var(--rule); border-radius:8px; background:var(--card);
+         padding:14px 16px; margin-bottom:12px; box-shadow:var(--shadow); }
+  .mon .top { display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; }
+  .mon .ym { font-size:17px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .mon .amt { font-size:17px; font-weight:600; font-variant-numeric:tabular-nums; margin-left:auto; }
+  .mon .why { font-size:12.5px; color:var(--ink-2); margin-top:6px; line-height:1.6; }
+  .mon .dept { display:flex; flex-wrap:wrap; gap:6px 20px; margin-top:10px; font-size:13px;
+               font-variant-numeric:tabular-nums; }
+  .mon .dept span { display:inline-flex; align-items:center; gap:6px; }
+  .mon .dept i { width:9px; height:9px; border-radius:2px; flex:none; }
+  .mon .meta2 { font-size:12px; color:var(--ink-3); margin-top:8px; line-height:1.7; }
+  .mon .miss { color:var(--warn); }
 </style>
 
 <div class="shell">
@@ -472,6 +485,13 @@
     <div class="decide"><span class="k">為什麼這是分水嶺</span>
       即時查詢的儀表板，跟可以拿去對帳的帳務系統，差別就在這裡：<b>結帳之後數字不再變動</b>。
       每一份封存都附雜湊值，事後可以驗證沒有被改過；內容如果跟封存時不同，系統會回報衝突而<b>不是安靜覆蓋</b>。</div>
+    <h3 style="margin-bottom:10px">按月彙總</h3>
+    <p class="muted small" style="margin:0 0 12px">
+      月報的來源是<strong>封存</strong>，不是 Prometheus——幾個月前的資料本來就不在 Prometheus 裡了
+      （這個環境的 retention 是 7 天）。封存不受 retention 影響，而且是凍結的。</p>
+    <div id="months"></div>
+
+    <h3 style="margin:22px 0 10px">每日封存</h3>
     <div class="card scroll">
       <table>
         <thead><tr><th>帳期</th><th class="r">總額</th><th class="r">覆蓋率</th><th class="r">推估</th><th>當日出帳結論</th><th>完整性</th></tr></thead>
@@ -558,7 +578,7 @@ function barRow(parent, { label, color, value, max, note, hatch, tipHtml }) {
   parent.append(row);
 }
 
-// ---- 一、部門分攤 ----
+// ---- 部門分攤 ----
 function renderDept() {
   const shared = document.getElementById("idle-shr").checked;
   const chart = document.getElementById("chart-dept"); chart.textContent = "";
@@ -622,7 +642,7 @@ function renderDept() {
     : "閒置單獨列出，由平台團隊吸收；部門只付自己申請的部分。";
 }
 
-// ---- 二、prod vs dev ----
+// ---- prod vs dev ----
 function renderEnv() {
   const chart = document.getElementById("chart-env"); chart.textContent = "";
   const rows = DATA.ccEnv.filter(r => deptFilter === "all" || r.dept === deptFilter);
@@ -645,7 +665,7 @@ function renderEnv() {
     `<strong>測試環境佔 ${share}</strong>。測試環境常被當成「不用算」，但它佔用的容量和正式環境一樣要付。`;
 }
 
-// ---- 三、工作負載 ----
+// ---- 工作負載 ----
 function effCell(v, color) {
   const wrap = el("span", "minibar");
   const track = el("span", "minitrack");
@@ -688,7 +708,7 @@ function renderWorkloads() {
     (over ? `<b>${over.name}</b> 效率超過 100%，實際用量高於申請量，反而該調高申請值。` : ""));
 }
 
-// ---- 四、無法分攤 ----
+// ---- 無法分攤 ----
 function renderUnalloc() {
   const chart = document.getElementById("chart-unalloc"); chart.textContent = "";
   const rows = DATA.unallocRows.slice(0, 10);
@@ -700,7 +720,7 @@ function renderUnalloc() {
   }));
 }
 
-// ---- 五、計價依據 ----
+// ---- 計價依據 ----
 function renderRates() {
   const tb = document.getElementById("tbl-rate"); tb.textContent = "";
   const sum = k => DATA.depts.reduce((s, d) => s + (d[k] || 0), 0);
@@ -843,7 +863,7 @@ function renderLadder() {
   });
 }
 
-// ---- 五、資料可信度 ----
+// ---- 資料可信度 ----
 function renderTrust() {
   const tb = document.getElementById("tbl-trust"); tb.textContent = "";
   const cov = DATA.coverage || {}, b = DATA.basis || {}, f = b.fill || null;
@@ -887,7 +907,64 @@ function renderTrust() {
   });
 }
 
-// ---- 六、帳期封存 ----
+// ---- 月報（來源是封存，不是即時查詢）----
+let MONTHS = [];
+
+// 把連續的日期收成區間。缺 23 天時逐日列出來沒人看得完，
+// 而「09-01 ~ 09-20」一眼就看得出那是服務還沒開始的那段。
+function dayRanges(days) {
+  if (!days.length) return [];
+  const out = [];
+  let a = days[0], prev = days[0];
+  const next = d => {
+    const t = new Date(d + "T00:00:00Z"); t.setUTCDate(t.getUTCDate() + 1);
+    return t.toISOString().slice(0, 10);
+  };
+  for (let i = 1; i <= days.length; i++) {
+    if (i < days.length && days[i] === next(prev)) { prev = days[i]; continue; }
+    const n = Math.round((Date.parse(prev) - Date.parse(a)) / 86400000) + 1;
+    out.push(a === prev ? a.slice(5) : `${a.slice(5)} ~ ${prev.slice(5)}（${n} 天）`);
+    a = prev = days[i];
+  }
+  return out;
+}
+
+function renderMonths() {
+  const box = document.getElementById("months");
+  if (!box) return;
+  box.textContent = "";
+  if (!MONTHS.length) {
+    box.innerHTML = '<p class="muted small">還沒有任何封存的帳期。服務啟動後每小時會把已結束的日子封存起來，'
+      + '累積幾天之後這裡就會出現月報。</p>';
+    return;
+  }
+  const VERD = { ok: ["可出帳", "ok"], mark: ["需標示", "mark"], block: ["需核准", "block"] };
+  MONTHS.slice().reverse().forEach(m => {
+    const [label, cls] = VERD[m.verdict] || VERD.mark;
+    const el = document.createElement("div"); el.className = "mon";
+    const depts = Object.entries(m.depts || {})
+      .sort((a, b) => b[1] - a[1])
+      .map(([id, v]) => `<span><i style="background:${COLOR[id] || 'var(--ink-3)'}"></i>`
+        + `${esc(dname(id))} <b>${n4(v)}</b></span>`).join("");
+    const ranges = dayRanges(m.missingDays || []);
+    el.innerHTML = `<div class="top"><span class="ym">${esc(m.month)}</span>`
+      + `<span class="tag ${cls}">${label}</span>`
+      + `<span class="amt">${n4(m.total)}</span></div>`
+      + `<div class="why">${esc(m.reason || "")}</div>`
+      + (depts ? `<div class="dept">${depts}</div>` : "")
+      + `<div class="meta2">已封存 ${m.sealedDays}/${m.expectedDays} 天`
+      + (m.month === new Date().toISOString().slice(0, 7) ? `（整月 ${m.monthDays} 天，尚未過完）` : "")
+      + (m.minCoverage !== null && m.minCoverage !== undefined
+          ? ` · 最低單日覆蓋率 ${m.minCoverage}%` : "")
+      + (m.gapMinutes ? ` · 量測缺漏合計 ${m.gapMinutes} 分鐘` : "")
+      + (m.estimatedPct ? ` · 推估佔 ${m.estimatedPct}%` : "")
+      + (ranges.length ? `<br><span class="miss">沒有封存的日子：${esc(ranges.join("、"))}</span>` : "")
+      + `</div>`;
+    box.appendChild(el);
+  });
+}
+
+// ---- 帳期封存 ----
 let SEALS = [];
 function renderSeals() {
   const tb = document.getElementById("tbl-seals"); tb.textContent = "";
@@ -907,7 +984,7 @@ function renderSeals() {
   });
 }
 
-// ---- 七、下一步 ----
+// ---- 下一步 ----
 // 全部從實際資料算出來，包含具體的名字與金額。泛泛的建議客戶自己也會寫。
 function renderActions() {
   const box = document.getElementById("acts"); box.textContent = "";
@@ -987,7 +1064,7 @@ function renderActions() {
 
 function renderAll() {
   renderGate(); renderLadder(); renderDept(); renderUsage(); renderEnv(); renderWorkloads();
-  renderUnalloc(); renderTrust(); renderSeals(); renderActions(); renderRates();
+  renderUnalloc(); renderTrust(); renderMonths(); renderSeals(); renderActions(); renderRates();
   enhanceSections(); buildToc(); capAll();
 }
 
@@ -1375,7 +1452,9 @@ async function load(win) {
     try {
       const sres = await fetch("api/seals", { cache: "no-store" });
       SEALS = sres.ok ? ((await sres.json()).seals || []) : [];
-    } catch (e) { SEALS = []; }
+      const mres = await fetch("api/periods", { cache: "no-store" });
+      MONTHS = mres.ok ? ((await mres.json()).months || []) : [];
+    } catch (e) { SEALS = []; MONTHS = []; }
     buildSegs(); renderMeta(); renderAll();
   } catch (e) {
     document.getElementById("m-fresh").textContent = "讀取失敗：" + e.message;

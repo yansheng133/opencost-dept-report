@@ -709,6 +709,11 @@ class Handler(BaseHTTPRequestHandler):
                                                "seals": billing.list_seals(SEAL_DIR)},
                                               ensure_ascii=False),
                               "application/json; charset=utf-8")
+        if path == "/api/periods":
+            # 月報：來源是封存，不是 Prometheus——幾個月前的資料本來就不在 Prometheus 裡了
+            return self._send(200, json.dumps({"months": billing.aggregate_periods(SEAL_DIR)},
+                                              ensure_ascii=False),
+                              "application/json; charset=utf-8")
         if path == "/api/seal":
             day = (qs.get("day") or [""])[0]
             doc = billing.read_seal(SEAL_DIR, day) if day else None
