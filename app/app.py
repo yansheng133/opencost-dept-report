@@ -372,7 +372,13 @@ def usage_series(window):
     """
     step = STEPS.get(window)
     if not step:
-        return None
+        # 指定日期之類的絕對區間不在 STEPS 裡，照區間長度挑一個合適的間隔。
+        # 沒有這一段的話，選了某一天就完全沒有折線圖——加了日期查詢卻忘了教它。
+        span = nominal_minutes(window)
+        if not span:
+            return None
+        step = ("5m" if span <= 180 else "15m" if span <= 480 else
+                "1h" if span <= 2880 else "6h" if span <= 14400 else "1d")
     try:
         params = {"window": window, "aggregate": "label:cost-center",
                   "accumulate": "false", "step": step}
@@ -391,15 +397,24 @@ def usage_series(window):
 
     # 空的區段沒有 start 欄位，但每一段的長度是固定的，所以可以從
     # 「第一個有資料的區段」往前後推算出來。有時間戳才放得上時間軸。
+    # 錨點要挑一個**完整**的區段，不是隨便一個有資料的。
+    # OpenCost 會把第一個區段的 start 截到第一筆資料的時間，如果那不在區段邊界上，
+    # 拿它當錨點推算後面的時間戳會整串偏移——實測 7 天的圖最後一個點跑到未來 5 小時。
     base_idx, base_ts = None, None
-    for i, seg in enumerate(segments):
-        row = next((v for k, v in (seg or {}).items() if v and not k.startswith("__")), None)
-        if row and row.get("start"):
+    for full_only in (True, False):
+        for i, seg in enumerate(segments):
+            row = next((v for k, v in (seg or {}).items() if v and not k.startswith("__")), None)
+            if not row or not row.get("start"):
+                continue
+            if full_only and float(row.get("minutes") or 0) < step_min * 0.9:
+                continue
             try:
                 base_idx, base_ts = i, _parse_iso(row["start"])
-                break
             except ValueError:
                 continue
+            break
+        if base_ts is not None:
+            break
     if base_ts is None:
         return None
 
@@ -407,8 +422,20 @@ def usage_series(window):
         return time.strftime("%Y-%m-%dT%H:%M:%SZ",
                              time.gmtime(base_ts + (i - base_idx) * step_min * 60))
 
+    # 時間軸不可以延伸到未來，也不該超過查詢區間的終點
+    limit = time.time()
+    if "," in window:
+        try:
+            limit = min(limit, _parse_iso(window.split(",", 1)[1].strip()))
+        except (ValueError, TypeError):
+            pass
+
     points, covered = [], 0
     for idx, seg in enumerate(segments):
+        # 區段的**起點**超過現在（或超過查詢區間終點）就是未來的空格子，不要畫。
+        # 容許一個 step 的寬限是錯的：6 小時的間隔會讓時間軸多伸出去半天。
+        if base_ts + (idx - base_idx) * step_min * 60 > limit:
+            continue
         rows = {k: v for k, v in (seg or {}).items() if v and not k.startswith("__")}
         any_row = next(iter(rows.values()), {}) if rows else {}
         minutes = float(any_row.get("minutes") or 0)

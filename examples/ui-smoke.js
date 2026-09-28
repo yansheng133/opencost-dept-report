@@ -371,6 +371,14 @@ function check(ok, what, detail) {
       check(after.eyebrow.includes(sealDay),
             `選日期會切到那一天（${sealDay}），而且標題列要講明白不是即時資料`, JSON.stringify(after));
       check(after.win.startsWith(sealDay), "期間確實是那一天", after.win);
+      // 指定日期時折線圖也要有資料。加了日期查詢卻忘了教序列函式認絕對區間的話，
+      // 圖會整個空掉——而那正是「回頭看某一天」最想看的東西。
+      const daySeries = await page.evaluate(() =>
+        (typeof DATA !== "undefined" && DATA.series)
+          ? { covered: DATA.series.covered, expected: DATA.series.expected, step: DATA.series.step }
+          : null);
+      check(daySeries && daySeries.covered > 0,
+            "指定某一天時，使用率折線圖也要有資料", JSON.stringify(daySeries));
       await page.click("#pick-clear");
       await page.waitForFunction(() =>
         !document.querySelector(".eyebrow").textContent.includes("檢視"), null, { timeout: 30000 });
@@ -391,6 +399,18 @@ function check(ok, what, detail) {
     const expect = Math.round(cov.scrapePct * cov.windowPct) / 100;
     check(Math.abs(cov.pct - expect) < 0.5,
           "實際涵蓋率 = 抓取覆蓋率 × 區間涵蓋率", JSON.stringify(cov));
+  }
+
+  // 時間軸不可以延伸到未來。OpenCost 會回一個「還沒到」的空格子，
+  // 把它畫進去的話，6 小時的間隔會讓軸多伸出去半天，看過往區間時就覺得怪。
+  const future = await page.evaluate(() => {
+    if (typeof DATA === "undefined" || !DATA.series) return null;
+    const now = Date.now();
+    return DATA.series.points.filter(p => Date.parse(p.start) > now + 60000)
+                             .map(p => p.start);
+  });
+  if (future) {
+    check(future.length === 0, "折線圖的時間軸不會延伸到未來", JSON.stringify(future));
   }
 
   check(errors.length === 0, "沒有 JavaScript 錯誤", errors.join(" | "));
