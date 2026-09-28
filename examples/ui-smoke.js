@@ -310,6 +310,45 @@ function check(ok, what, detail) {
     }
   }
 
+  // ── 欄位說明 ──
+  const hints = await page.evaluate(() => {
+    const all = [...document.querySelectorAll(".hint")];
+    // 數字欄位光看名字看不出是什麼，這幾個是最容易被誤讀的
+    const must = ["CPU 核時", "月推估", "覆蓋率", "小計", "完整性"];
+    const texts = all.map(n => n.textContent.trim());
+    return {
+      count: all.length,
+      missing: must.filter(m => !texts.includes(m)),
+      focusable: all.every(n => n.tabIndex === 0),
+      // 說明要掛在標籤上，不是掛在數字上——大數字底下一條虛線很怪
+      onValues: ["t-total", "t-idle", "t-unalloc"]
+        .filter(id => (document.getElementById(id) || {}).classList?.contains("hint")),
+    };
+  });
+  check(hints.count > 20, `有說明的欄位有 ${hints.count} 個`);
+  check(hints.missing.length === 0, "最容易被誤讀的欄位都有說明", JSON.stringify(hints.missing));
+  check(hints.focusable, "說明可以用鍵盤聚焦（只綁 hover 的話，觸控與鍵盤使用者永遠看不到）");
+  check(hints.onValues.length === 0, "說明掛在標籤上，不是掛在數字上", JSON.stringify(hints.onValues));
+
+  // 滑過去真的要出現，而且離開要收掉
+  const shown = await page.evaluate(async () => {
+    const el = [...document.querySelectorAll(".hint")].find(n => n.textContent.trim() === "月推估");
+    if (!el) return null;
+    el.scrollIntoView({ block: "center" });
+    await new Promise(r => setTimeout(r, 200));
+    el.dispatchEvent(new PointerEvent("pointerenter", { bubbles: true }));
+    await new Promise(r => setTimeout(r, 150));
+    const on = { op: getComputedStyle(document.getElementById("tip")).opacity,
+                 len: document.getElementById("tip").textContent.length };
+    el.dispatchEvent(new PointerEvent("pointerleave", { bubbles: true }));
+    await new Promise(r => setTimeout(r, 150));
+    return { on, offOpacity: getComputedStyle(document.getElementById("tip")).opacity };
+  });
+  if (shown) {
+    check(shown.on.op === "1" && shown.on.len > 10, "滑過欄位名稱會出現說明", JSON.stringify(shown));
+    check(shown.offOpacity === "0", "移開之後說明會收掉", JSON.stringify(shown));
+  }
+
   check(errors.length === 0, "沒有 JavaScript 錯誤", errors.join(" | "));
   check(warnings.length === 0, "沒有觸發收合的安全網（有的話代表版面結構壞了）", warnings.join(" | "));
 

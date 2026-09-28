@@ -142,7 +142,11 @@
   .note .d { font-size: 13px; color: var(--ink-2); line-height: 1.6; }
   footer { margin-top: 52px; padding-top: 18px; border-top: 1px solid var(--rule); font-size: 12.5px; color: var(--ink-3); display: flex; flex-direction: column; gap: 6px; }
 
-  #tip { position: fixed; z-index: 30; pointer-events: none; opacity: 0; transition: opacity .12s; background: var(--ink); color: var(--paper); font-size: 12.5px; padding: 6px 9px; border-radius: 6px; line-height: 1.5; white-space: nowrap; }
+  #tip { position: fixed; z-index: 30; pointer-events: none; opacity: 0; transition: opacity .12s; background: var(--ink); color: var(--paper); font-size: 12.5px; padding: 8px 11px; border-radius: 6px; line-height: 1.6; max-width: 340px; white-space: normal; }
+  /* 欄位名稱的說明：用虛線底線提示「這裡可以看」，不佔版面 */
+  .hint { border-bottom: 1px dotted var(--ink-3); cursor: help; }
+  .hint:focus { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+  th .hint { border-bottom-color: var(--ink-3); }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
   @media (max-width: 560px) {
     .row { grid-template-columns: 1fr; }
@@ -907,6 +911,79 @@ function renderTrust() {
   });
 }
 
+// ── 欄位說明 ───────────────────────────────────────────────────────────────
+// 很多欄位光看名字不知道是什麼（「核時」是什麼？「月推估」怎麼算的？）。
+// 寫在畫面上會把表格撐爆，所以放在滑過去才出現的提示裡。
+// 鍵盤與觸控也要能看到，所以同時綁 focus——只綁 hover 的話，手機使用者永遠看不到。
+const HELP = {
+  "CPU 核時": "<b>核心 × 小時</b>的累計量。1 核跑 2 小時 = 2 核時。<br>這是計價的基礎，不是瞬間用量。",
+  "記憶體 GiB 時": "<b>GiB × 小時</b>的累計量。<br>注意是 2<sup>30</sup> 位元組，不是 10<sup>9</sup>。",
+  "CPU 金額": "CPU 核時 × 單價。",
+  "記憶體金額": "記憶體 GiB 時 × 單價。",
+  "儲存金額": "PVC 的 GiB 時 × 單價。沒有掛 PVC 的部門是 0。",
+  "小計": "這個部門的 CPU ＋ 記憶體 ＋ 儲存。<br><b>不含閒置與無法分攤</b>——那兩塊要另外決定誰吸收。",
+  "月推估": "本期金額 × (30 天 ÷ 本期長度)。<br><b>樣本很短的時候這個數字非常不可靠</b>：7 分鐘的樣本要乘 5760 倍。這種情況畫面上會把這一欄變淡並標註。",
+  "CPU 效率": "實際用量 ÷ 申請量。<br>超過 100% 代表用得比申請的多（計價依 max(申請, 用量)，所以會照實際用量算）。",
+  "記憶體效率": "實際用量 ÷ 申請量。",
+  "CPU 申請→實際": "左邊是 requests，右邊是期間內的平均實際用量。<br>兩者差很多＝申請過多，但<b>先問清楚再砍</b>：尖峰備援與批次工作本來就長這樣。",
+  "記憶體 申請→實際": "左邊是 requests，右邊是期間內的平均實際用量。",
+  "工作負載": "Deployment／StatefulSet／DaemonSet 的名稱。<br>系統元件（kube-system 那些）不列在這裡。",
+  "單價": "每一個計價單位的價格，由<b>價目表</b>設定。<br>畫面上會比對它跟系統實際計價用的單價是否一致——只改一邊不會有錯誤訊息，但帳單會跟系統永遠對不起來。",
+  "計價單位": "CPU 是每 vCPU 小時；記憶體與儲存是每 GiB 小時（2<sup>30</sup>）。",
+  "本期用量": "所有部門在本期的用量合計。",
+  "帳期": "已經結帳<b>凍結</b>的那一天。封存之後不管什麼時候查都是同一份數字。",
+  "總額": "那一天的<b>全叢集</b>成本，含閒置與無法分攤。",
+  "覆蓋率": "那段期間有多少比例的時間<b>真的量到了資料</b>。<br>沒量到的時段成本照樣發生，所以覆蓋率低＝金額被少算。",
+  "推估": "金額裡有多少比例不是實際量測，而是用<b>宣告量</b>補的。",
+  "當日出帳結論": "那一天有沒有通過出帳關卡：可出帳／需標示／需核准。",
+  "完整性": "重新計算封存內容的 SHA-256，跟當初存的比對。<br>對不上代表檔案被改過——<b>只存雜湊不驗算等於沒有防竄改</b>。",
+  "抓取工作（job）": "Prometheus 的 scrape job。一個 job 底下可能有多個 target。",
+  "期間總成本": "全叢集，含閒置與未標籤。<br>這個數字應該等於資產（節點＋磁碟）的成本——對不上代表有成本沒被分攤，或被重複計算。",
+  "閒置（無人使用的餘裕）": "節點買了、但沒有任何工作負載申請的那一塊。<br>要不要分攤給部門是<b>政策決定</b>，兩種做法的總額完全相同，差別只在誰吸收。",
+  "無法分攤": "沒有部門標籤的成本。<br>沒有規則的話，這筆錢最後是<b>平台團隊無聲地付</b>。這個比例應該逐月下降，它是標籤治理的成績單。",
+  "環境": "第二維度的標籤，預設是 <code>env</code>（prod／dev）。",
+  "金額": "該資源在本期的總金額 = 用量 × 單價。",
+  "預期目標數": "這個 job 在這段期間<b>最多</b>同時有幾個 target。",
+  "最差時": "期間內同時健康的 target <b>最少</b>剩幾個。<br>比預期少就是有東西掉線過。",
+  "掉線樣本": "有多少比例的取樣點出現 target 不健康。<br><b>少數 target 掉線比全掛危險</b>：報表照樣產出，只有那幾台的成本被少算。",
+};
+// 內容會被重新寫入的元素用 id 對應，不能用文字（那個文字本身會隨篩選而變）
+const HELP_ID = {
+  "t-dept-k": "有篩選部門時只算那一個部門。<br><b>不含閒置與無法分攤</b>。",
+};
+
+function showTipAt(el, html) {
+  tip.innerHTML = html;
+  tip.style.opacity = "1";
+  const r = el.getBoundingClientRect();
+  tip.style.left = Math.min(Math.max(r.left, 8), window.innerWidth - tip.offsetWidth - 8) + "px";
+  tip.style.top = Math.max(r.top - tip.offsetHeight - 10, 8) + "px";
+}
+
+function bindHelp(el, html) {
+  bindTip(el, html);
+  el.tabIndex = 0;
+  el.setAttribute("role", "note");
+  el.setAttribute("aria-label", el.textContent.trim() + "：" + html.replace(/<[^>]+>/g, ""));
+  el.addEventListener("focus", () => showTipAt(el, html));
+  el.addEventListener("blur", () => { tip.style.opacity = "0"; });
+}
+
+function applyHelp() {
+  document.querySelectorAll("th, .k").forEach(el => {
+    if (el.querySelector(".hint")) return;             // 已經包過了
+    const txt = el.textContent.trim();
+    const html = HELP[txt] || HELP_ID[el.id];
+    if (!html) return;
+    el.textContent = "";
+    const span = document.createElement("span");
+    span.className = "hint";
+    span.textContent = txt;
+    el.appendChild(span);
+    bindHelp(span, html);
+  });
+}
+
 // ---- 月報（來源是封存，不是即時查詢）----
 let MONTHS = [];
 
@@ -1065,7 +1142,7 @@ function renderActions() {
 function renderAll() {
   renderGate(); renderLadder(); renderDept(); renderUsage(); renderEnv(); renderWorkloads();
   renderUnalloc(); renderTrust(); renderMonths(); renderSeals(); renderActions(); renderRates();
-  enhanceSections(); buildToc(); capAll();
+  enhanceSections(); buildToc(); capAll(); applyHelp();
 }
 
 function renderMeta() {
