@@ -22,6 +22,7 @@ OpenCost 自己的 UI 是給平台團隊看的：它按 namespace 和工作負�
 | 每個工作負載付了多少、用了多少 | 申請量對實際用量，標出可回收的對象；也標出「效率低但其實在工作」的例外 |
 | 無法分攤的成本 | 沒有部門標籤的部分有多大，就是標籤治理的量化指標 |
 | 計價依據 | 單價、計價單位、本期用量；單價由資料反推，不寫死在程式裡 |
+| **指定某一天** | 日期選擇器，或直接點「帳期封存」表裡的日期。可以回頭看某一天完整的報表（限 Prometheus retention 之內） |
 | **資料完整度** | 本期有多少時間真的量到了、缺在哪幾段、有多少金額是推估的、監控目標有沒有掉線過 |
 | **帳期封存** | 已結帳凍結的日子、當天的出帳結論、雜湊完整性 |
 | **按月彙總** | 幾個月的帳單。**來源是封存不是 Prometheus**——後者的 retention 有限（這個環境 7 天），查不到幾個月前。缺日子的月份會明白標示「N 天的加總不是一個月的帳單」 |
@@ -87,7 +88,7 @@ KCFG=<kubeconfig 路徑> bash snapshotter/deploy.sh --apply # 部署快照器（
 換版本或換成自建的 registry：
 
 ```bash
-IMAGE_TAG=0.5.0 KCFG=… bash deploy.sh --apply
+IMAGE_TAG=0.6.0 KCFG=… bash deploy.sh --apply
 IMAGE=myregistry.local/cost-report:1.2.3 KCFG=… bash deploy.sh --apply
 ```
 
@@ -141,6 +142,7 @@ REGISTRY=<你的帳號> bash build-images.sh --push
 |---|---|
 | `GET /` | 報表畫面 |
 | `GET /api/report?window=24h` | JSON，給其他系統取用 |
+| `GET /api/report?day=2026-09-24` | **指定某一天**的完整報表。只接受整天，所以不會有人下超大的查詢把 Prometheus 打爆 |
 | `GET /api/seals` | 已封存的帳期清單，含雜湊完整性驗證 |
 | `GET /api/periods` | **按月彙總的帳期**。來源是封存不是 Prometheus，所以查得到 retention 以外的月份 |
 | `GET /api/seal?day=YYYY-MM-DD` | 單一帳期的完整封存內容 |
@@ -169,8 +171,8 @@ REGISTRY=<你的帳號> bash build-images.sh --push
 
 | | |
 |---|---|
-| 報表服務 | `docker.io/yansheng133/cost-report:0.5.0` |
-| 快照器 | `docker.io/yansheng133/cost-snapshotter:0.5.0` |
+| 報表服務 | `docker.io/yansheng133/cost-report:0.6.0` |
+| 快照器 | `docker.io/yansheng133/cost-snapshotter:0.6.0` |
 | 架構 | `linux/amd64`、`linux/arm64` |
 | 基底 | `registry.suse.com/bci/python:3.12`，非 root（UID 1000）執行 |
 

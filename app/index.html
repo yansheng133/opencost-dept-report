@@ -145,6 +145,9 @@
   #tip { position: fixed; z-index: 30; pointer-events: none; opacity: 0; transition: opacity .12s; background: var(--ink); color: var(--paper); font-size: 12.5px; padding: 8px 11px; border-radius: 6px; line-height: 1.6; max-width: 340px; white-space: normal; }
   /* 欄位名稱的說明：用虛線底線提示「這裡可以看」，不佔版面 */
   .hint { border-bottom: 1px dotted var(--ink-3); cursor: help; }
+  /* 載入中：內容變淡並擋住點擊，避免有人對著上一天的數字操作 */
+  body.loading .wrap section, body.loading .totals { opacity: .45; pointer-events: none;
+    transition: opacity .15s; }
   .hint:focus { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
   th .hint { border-bottom-color: var(--ink-3); }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
@@ -241,6 +244,11 @@
           border: 1px solid var(--rule-soft); cursor: pointer; border-radius: 4px; flex: none;
           width: 22px; height: 22px; display: grid; place-items: center; }
   .fold:hover { color: var(--ink); background: var(--rule-soft); }
+  /* 一般的小按鈕。**不要借用 .fold**——那個 class 的語意是「區塊收合鈕」，
+     借來當樣式會讓「收合後每個 .fold 都要看得見」這類檢查誤判。 */
+  .mini { font: inherit; font-size: 12px; color: var(--ink-3); background: none;
+          border: 1px solid var(--rule); border-radius: 4px; padding: 4px 10px; cursor: pointer; }
+  .mini:hover { color: var(--ink); border-color: var(--ink-3); }
   .anchor { font-size: 13px; color: var(--ink-3); text-decoration: none; opacity: 0; transition: opacity .12s; }
   .h2row:hover .anchor { opacity: 1; }
   .anchor:hover { color: var(--accent); }
@@ -355,6 +363,14 @@
       <fieldset>
         <legend>區間</legend>
         <div class="seg" id="seg-window"></div>
+      </fieldset>
+      <fieldset>
+        <legend>指定某一天</legend>
+        <div style="display:flex; align-items:center; gap:8px">
+          <input type="date" id="pick-day" style="font:inherit; font-size:13px; padding:4px 8px;
+                 border:1px solid var(--rule); border-radius:6px; background:var(--card); color:var(--ink)">
+          <button type="button" id="pick-clear" class="mini">回到即時</button>
+        </div>
       </fieldset>
       <fieldset>
         <legend>閒置成本處理</legend>
@@ -771,13 +787,21 @@ function renderRates() {
 }
 
 // ---- 控制列 ----
+let DEFAULT_WIN = null;
+
 function buildSegs() {
   const sw = document.getElementById("seg-window"); sw.textContent = "";
+  // 第一次載入時伺服器回的就是它的預設區間。用 windows[0] 是錯的——
+  // 那是清單裡的第一個（1h），不是預設值（24h）。
+  if (!DEFAULT_WIN && !VIEW.day) DEFAULT_WIN = DATA.window.query;
   (DATA.windows || [DATA.window.query]).forEach(w => {
     const lab = el("label"); const inp = document.createElement("input");
     inp.type = "radio"; inp.name = "win"; inp.value = w; inp.id = "win-" + w;
-    inp.checked = w === DATA.window.query;
-    inp.addEventListener("change", () => load(w));
+    inp.checked = !VIEW.day && w === DATA.window.query;
+    inp.addEventListener("change", () => {
+      const p = document.getElementById("pick-day"); if (p) p.value = "";
+      load(w, null);
+    });
     lab.append(inp, document.createTextNode(w));
     sw.append(lab);
   });
@@ -872,10 +896,19 @@ function renderTrust() {
   const tb = document.getElementById("tbl-trust"); tb.textContent = "";
   const cov = DATA.coverage || {}, b = DATA.basis || {}, f = b.fill || null;
   const rows = [
-    ["量測覆蓋率", cov.available === false ? "無法確認" : (cov.pct !== undefined ? cov.pct + "%" : "—"),
+    ["實際涵蓋率", cov.available === false ? "無法確認" : (cov.pct !== undefined ? cov.pct + "%" : "—"),
      cov.available === false ? `連不上 Prometheus：${cov.reason || ""}`
-       : `缺 ${cov.gapMinutes || 0} 分鐘。抓取間隔 ${cov.stepSeconds || "?"} 秒`
-         + (cov.measuredStep ? "（跟 Prometheus 的 target 問出來的，不是猜的）" : "（問不到，用 60 秒估算）")],
+       : `= 抓取覆蓋率 ${cov.scrapePct}% × 區間涵蓋率 ${cov.windowPct === null || cov.windowPct === undefined ? "—" : cov.windowPct + "%"}。`
+         + `這兩個是不同的東西：前者是「有資料的那一段裡 Prometheus 有沒有在抓」（抓中間的斷層），`
+         + `後者是「要求的區間裡有多少比例根本沒有資料」（抓邊緣的截斷）。`
+         + `只看前者的話，區間邊緣被截掉時會顯示 100%。`],
+    ["要求 vs 實際涵蓋",
+     `${cov.measuredMinutes === undefined || cov.measuredMinutes === null ? "—" : cov.measuredMinutes} / `
+       + `${cov.requestedMinutes === undefined || cov.requestedMinutes === null ? "—" : cov.requestedMinutes} 分鐘`,
+     "你要求的區間長度，跟裡面真的有資料的時間。差很多代表資料在區間的頭或尾被截斷了。"],
+    ["抓取斷層", `${cov.gapMinutes || 0} 分鐘`,
+     `有資料的那一段裡，Prometheus 中斷了多久。抓取間隔 ${cov.stepSeconds || "?"} 秒`
+       + (cov.measuredStep ? "（跟 target 問出來的，不是猜的）" : "（問不到，用 60 秒估算）")],
     ["推估佔比", (b.estimatedPct || 0) + "%",
      f ? `用宣告量補了 ${n4(b.estimatedTotal)}，來源是快照器`
          + (f.snapshotCoveragePct !== null && f.snapshotCoveragePct !== undefined
@@ -1052,13 +1085,18 @@ function renderSeals() {
   SEALS.slice().reverse().forEach(x => {
     const tr = document.createElement("tr");
     const verdict = { ok: "可出帳", mark: "需標示", block: "<b style='color:#b42828'>需核准</b>" }[x.gate] || "—";
-    tr.innerHTML = `<td>${esc(x.day)}</td><td class="r num">${x.total === undefined ? "—" : n4(x.total)}</td>`
+    tr.innerHTML = `<td><a href="#" class="day-link" data-day="${esc(x.day)}">${esc(x.day)}</a></td>`
+      + `<td class="r num">${x.total === undefined ? "—" : n4(x.total)}</td>`
       + `<td class="r num">${x.coveragePct === undefined || x.coveragePct === null ? "—" : x.coveragePct + "%"}</td>`
       + `<td class="r num">${x.estimatedPct === undefined || x.estimatedPct === null ? "—" : x.estimatedPct + "%"}</td>`
       + `<td>${verdict}</td>`
       + `<td>${x.intact ? "✓ 未被改動" : "<b style='color:#b42828'>✗ 雜湊對不上</b>"}</td>`;
     tb.appendChild(tr);
   });
+  tb.querySelectorAll(".day-link").forEach(a => a.addEventListener("click", ev => {
+    ev.preventDefault();
+    goToDay(a.dataset.day);
+  }));
 }
 
 // ---- 下一步 ----
@@ -1170,6 +1208,14 @@ function renderMeta() {
   fresh.style.color = DATA.stale ? "var(--warn)" : "";
   const cl = document.getElementById("m-cluster");
   if (cl) cl.textContent = DATA.cluster || "—";
+  // 看的是指定日期而不是即時資料時，要講出來——否則會以為這是現在的狀況
+  const eyebrow = document.querySelector(".eyebrow");
+  if (eyebrow) {
+    eyebrow.textContent = VIEW.day
+      ? `檢視 ${VIEW.day} 這一天 · 依 cost-center 標籤`
+      : "Kubernetes 成本分攤 · 依 cost-center 標籤";
+    eyebrow.style.color = VIEW.day ? "var(--accent)" : "";
+  }
   const cov = document.getElementById("cov"), c = DATA.coverage;
   if (cov) {
     cov.className = "cov";
@@ -1518,9 +1564,24 @@ function capAll() {
   capTable("tbl-seals", 7, "個帳期");
 }
 
-async function load(win) {
+let VIEW = { win: null, day: null };     // 目前在看什麼；自動更新要維持它
+let LOAD_SEQ = 0;                        // 防競態：只有最後一次發出的請求可以更新畫面
+
+async function load(win, day) {
+  VIEW = { win: day ? null : (win || VIEW.win), day: day || null };
+  const seq = ++LOAD_SEQ;
+  // 指定日期的查詢要跑好幾個 OpenCost 查詢，幾秒鐘跑不完。
+  // 沒有載入提示的話，畫面會停在舊數字上——看起來像沒反應，
+  // 更糟的是有人會把上一天的數字當成這一天的。
+  document.body.classList.add("loading");
+  const fresh = document.getElementById("m-fresh");
+  if (fresh) { fresh.textContent = day ? `載入 ${day}…` : "載入中…"; fresh.style.color = "var(--accent)"; }
   try {
-    const res = await fetch("api/report" + (win ? "?window=" + encodeURIComponent(win) : ""), { cache: "no-store" });
+    const q = VIEW.day ? "?day=" + encodeURIComponent(VIEW.day)
+                       : (VIEW.win ? "?window=" + encodeURIComponent(VIEW.win) : "");
+    const res = await fetch("api/report" + q, { cache: "no-store" });
+    // 慢的回應不可以蓋掉後來發出的：快速切換日期時很容易發生
+    if (seq !== LOAD_SEQ) return;
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
     DATA = await res.json();
     DATA.depts.forEach((d, i) => { COLOR[d.id] = `var(${COLOR_VARS[i % COLOR_VARS.length]})`; });
@@ -1532,8 +1593,10 @@ async function load(win) {
       const mres = await fetch("api/periods", { cache: "no-store" });
       MONTHS = mres.ok ? ((await mres.json()).months || []) : [];
     } catch (e) { SEALS = []; MONTHS = []; }
+    if (seq !== LOAD_SEQ) return;
     buildSegs(); renderMeta(); renderAll();
   } catch (e) {
+    if (seq !== LOAD_SEQ) return;
     document.getElementById("m-fresh").textContent = "讀取失敗：" + e.message;
     document.getElementById("m-fresh").style.color = "var(--warn)";
     // 讀不到資料時，下面會是一整頁空表格——只在頂部放一行小字不夠，
@@ -1547,13 +1610,30 @@ async function load(win) {
     }
     // 導覽仍然要能用，至少讓人跳到「計價依據」看設定
     enhanceSections(); buildToc();
+  } finally {
+    if (seq === LOAD_SEQ) document.body.classList.remove("loading");
   }
 }
 
 document.querySelectorAll('input[name="idle"]').forEach(r => r.addEventListener("change", () => DATA && renderDept()));
+const pick = document.getElementById("pick-day");
+if (pick) {
+  pick.addEventListener("change", () => { if (pick.value) load(null, pick.value); });
+  document.getElementById("pick-clear").addEventListener("click", () => {
+    pick.value = ""; load(DEFAULT_WIN || "24h", null);
+  });
+}
+// 點封存表的某一天就載入那一天——封存清單本身就是「可以選的日期」
+function goToDay(day) {
+  const p = document.getElementById("pick-day");
+  if (p) p.value = day;
+  load(null, day);
+  document.getElementById("dept").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 document.querySelectorAll('input[name="metric"]').forEach(r => r.addEventListener("change", e => {
   METRIC = e.target.value; if (DATA) renderUsage();
 }));
 load();
-setInterval(() => load(DATA && DATA.window ? DATA.window.query : undefined), 60000);
+setInterval(() => load(VIEW.win, VIEW.day), 60000);
 </script>

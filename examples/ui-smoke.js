@@ -71,8 +71,12 @@ function check(ok, what, detail) {
   await page.click('#toc button:has-text("全部收合")');
   await page.waitForTimeout(250);
   check(await page.$$eval("section.collapsed", n => n.length) === ids.length, "全部收合");
-  check(await page.$$eval("section[id] .fold", ns => ns.every(f => f.offsetParent !== null)),
-        "全部收合之後，每一節的展開鈕都還看得到");
+  const hiddenFolds = await page.$$eval("section[id] .fold", ns => ns
+    .filter(f => f.offsetParent === null)
+    .map(f => (f.closest("section[id]") || {}).id + "/" + (f.id || f.textContent.trim())));
+  check(hiddenFolds.length === 0,
+        "全部收合之後，每一節的展開鈕都還看得到（.fold 這個 class 只能給收合鈕用）",
+        JSON.stringify(hiddenFolds));
   await page.evaluate(() =>
     document.querySelectorAll("section.collapsed").forEach(s => s.classList.remove("collapsed")));
   await page.click('#toc button:has-text("全部展開")');
@@ -347,6 +351,46 @@ function check(ok, what, detail) {
   if (shown) {
     check(shown.on.op === "1" && shown.on.len > 10, "滑過欄位名稱會出現說明", JSON.stringify(shown));
     check(shown.offOpacity === "0", "移開之後說明會收掉", JSON.stringify(shown));
+  }
+
+  // ── 指定日期：封存之外唯一能回頭看某一天的方法 ──
+  const dayPick = await page.$("#pick-day");
+  if (dayPick) {
+    const before = await page.evaluate(() => document.getElementById("t-total").textContent);
+    const sealDay = await page.evaluate(() =>
+      (typeof SEALS !== "undefined" && SEALS.length) ? SEALS[SEALS.length - 1].day : null);
+    if (sealDay) {
+      await page.fill("#pick-day", sealDay);
+      await page.waitForFunction(d =>
+        document.querySelector(".eyebrow").textContent.includes(d), sealDay, { timeout: 30000 });
+      const after = await page.evaluate(() => ({
+        eyebrow: document.querySelector(".eyebrow").textContent,
+        win: document.getElementById("m-window").textContent,
+        total: document.getElementById("t-total").textContent,
+      }));
+      check(after.eyebrow.includes(sealDay),
+            `選日期會切到那一天（${sealDay}），而且標題列要講明白不是即時資料`, JSON.stringify(after));
+      check(after.win.startsWith(sealDay), "期間確實是那一天", after.win);
+      await page.click("#pick-clear");
+      await page.waitForFunction(() =>
+        !document.querySelector(".eyebrow").textContent.includes("檢視"), null, { timeout: 30000 });
+      check(true, "可以回到即時檢視");
+    } else {
+      console.log("SKIP  指定日期（還沒有任何封存可以當測試對象）");
+    }
+  }
+
+  // 覆蓋率的分母要是「要求的區間」，不是「OpenCost 回傳的區間」——
+  // 用後者的話，資料在邊緣被截斷時會顯示 100%（實測有一天只有 60 分鐘卻報 100%）
+  const cov = await page.evaluate(() =>
+    (typeof DATA !== "undefined" && DATA.coverage) ? DATA.coverage : null);
+  if (cov && cov.available !== false) {
+    check(cov.requestedMinutes > 0, "覆蓋率有記錄「要求的區間長度」", JSON.stringify(cov));
+    check(cov.measuredMinutes <= cov.requestedMinutes + 1,
+          "實際涵蓋不會超過要求的區間", JSON.stringify(cov));
+    const expect = Math.round(cov.scrapePct * cov.windowPct) / 100;
+    check(Math.abs(cov.pct - expect) < 0.5,
+          "實際涵蓋率 = 抓取覆蓋率 × 區間涵蓋率", JSON.stringify(cov));
   }
 
   check(errors.length === 0, "沒有 JavaScript 錯誤", errors.join(" | "));

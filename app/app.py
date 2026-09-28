@@ -23,6 +23,7 @@
 """
 import calendar
 import json
+import re
 import os
 import threading
 import time
@@ -125,7 +126,29 @@ def _scrape_interval():
     return None
 
 
-def coverage(start_iso, end_iso):
+def nominal_minutes(window):
+    """這個查詢**要求**的區間有多長（分鐘）。
+
+    這是覆蓋率的正確分母。早期版本拿「OpenCost 實際回傳的區間」當分母，
+    於是資料在區間邊緣被截斷時，剩下的那一小段內部沒有斷層就顯示 100%——
+    實測有一天只涵蓋 60 分鐘卻報「覆蓋率 100%、可出帳」。
+    **分母選錯，資料最少的時候看起來最完美。**
+    """
+    w = (window or "").strip()
+    if "," in w:
+        try:
+            a, b = [x.strip() for x in w.split(",", 1)]
+            return max(1.0, (_parse_iso(b) - _parse_iso(a)) / 60.0)
+        except (ValueError, TypeError):
+            return None
+    unit = {"m": 1, "h": 60, "d": 1440}.get(w[-1:])
+    try:
+        return float(w[:-1]) * unit if unit else None
+    except ValueError:
+        return None
+
+
+def coverage(start_iso, end_iso, nominal=None, measured_minutes=None):
     """這段區間到底有多少時間真的量到了，缺的又缺在哪裡。
 
     沒有這個數字，缺漏就是無聲的：報表照樣產出，只是少算了一些錢，
@@ -176,9 +199,23 @@ def coverage(start_iso, end_iso):
     def iso(idx):
         return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(start + idx * step))
 
+    scrape_pct = _round(up / expected * 100, 2) if expected else 0.0
+    # 兩個不同的東西，都要講：
+    #   scrapePct  ——「有資料的那一段裡，Prometheus 有沒有在抓」（抓中間的斷層）
+    #   windowPct  ——「要求的區間裡，有多少比例根本沒有資料」（抓邊緣的截斷）
+    # 只看前者，區間邊緣被截掉時會顯示 100%；只看後者，中間的斷層會被漏掉。
+    window_pct = None
+    if nominal and measured_minutes is not None:
+        window_pct = _round(min(100.0, measured_minutes / nominal * 100), 2)
+    effective = scrape_pct if window_pct is None else _round(scrape_pct * window_pct / 100, 2)
     return {
         "available": True,
-        "pct": _round(up / expected * 100, 2) if expected else 0.0,
+        "scrapePct": scrape_pct,
+        "windowPct": window_pct,
+        "requestedMinutes": _round(nominal, 1) if nominal else None,
+        "measuredMinutes": _round(measured_minutes, 1) if measured_minutes is not None else None,
+        # pct 是給畫面與出帳關卡看的「實際涵蓋率」＝兩者相乘
+        "pct": effective,
         "measuredStep": measured_step,          # False = 沒問到抓取間隔，用了預設值 60s
         "stepSeconds": int(step),
         "samples": {"found": up, "expected": expected},
@@ -500,7 +537,8 @@ def build_report(window):
     rates = {k: (version or {}).get(k, implied_rates.get(k)) for k in implied_rates} if version \
         else dict(implied_rates)
 
-    cov = coverage(w_start, w_end)
+    cov = coverage(w_start, w_end, nominal_minutes(window),
+                   float(any_dept.get("minutes") or 0))
     gaps = (cov or {}).get("gaps") or []
     fill = declared_fill(gaps, rates) if gaps else None
 
@@ -680,10 +718,22 @@ class Handler(BaseHTTPRequestHandler):
                               "ready\n" if _ready.is_set() else "waiting for first fetch\n",
                               "text/plain; charset=utf-8")
         if path == "/api/report":
-            window = (qs.get("window") or [DEFAULT_WINDOW])[0]
-            if window not in WINDOWS:
-                return self._send(400, json.dumps({"error": f"window 必須是 {WINDOWS} 其中之一"}, ensure_ascii=False),
-                                  "application/json; charset=utf-8")
+            # 指定某一天：?day=2026-09-24 換成一段絕對區間。
+            # 只接受「整天」，所以不可能有人下一個超大的查詢把 Prometheus 打爆——
+            # 這是當初用白名單限制區間的理由，換成日期之後這個保護要留著。
+            day = (qs.get("day") or [""])[0].strip()
+            if day:
+                if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+                    return self._send(400, json.dumps({"error": "day 的格式要是 YYYY-MM-DD"},
+                                                      ensure_ascii=False),
+                                      "application/json; charset=utf-8")
+                window = f"{day}T00:00:00Z,{day}T23:59:59Z"
+            else:
+                window = (qs.get("window") or [DEFAULT_WINDOW])[0]
+                if window not in WINDOWS:
+                    return self._send(400, json.dumps({"error": f"window 必須是 {WINDOWS} 其中之一，或用 day=YYYY-MM-DD"},
+                                                      ensure_ascii=False),
+                                      "application/json; charset=utf-8")
             with _lock:
                 entry = dict(_cache.get(window) or {})
             if not entry.get("data") and not refresh(window):
