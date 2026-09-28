@@ -87,7 +87,7 @@ KCFG=<kubeconfig 路徑> bash snapshotter/deploy.sh --apply # 部署快照器（
 換版本或換成自建的 registry：
 
 ```bash
-IMAGE_TAG=0.4.0 KCFG=… bash deploy.sh --apply
+IMAGE_TAG=0.5.0 KCFG=… bash deploy.sh --apply
 IMAGE=myregistry.local/cost-report:1.2.3 KCFG=… bash deploy.sh --apply
 ```
 
@@ -169,8 +169,8 @@ REGISTRY=<你的帳號> bash build-images.sh --push
 
 | | |
 |---|---|
-| 報表服務 | `docker.io/yansheng133/cost-report:0.4.0` |
-| 快照器 | `docker.io/yansheng133/cost-snapshotter:0.4.0` |
+| 報表服務 | `docker.io/yansheng133/cost-report:0.5.0` |
+| 快照器 | `docker.io/yansheng133/cost-snapshotter:0.5.0` |
 | 架構 | `linux/amd64`、`linux/arm64` |
 | 基底 | `registry.suse.com/bci/python:3.12`，非 root（UID 1000）執行 |
 
