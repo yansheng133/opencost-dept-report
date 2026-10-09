@@ -58,8 +58,11 @@ SEAL_DIR = os.environ.get("SEAL_DIR", "/seals")
 SEAL_ENABLED = os.environ.get("SEAL_ENABLED", "1") != "0"
 SEAL_WINDOW = os.environ.get("SEAL_WINDOW", "24h")   # 封存用的區間長度（整天）
 # 使用率折線圖的取樣間隔。點太密會看不出趨勢，太疏會把日夜曲線抹平。
+# 下限是實測出來的：Prometheus 每 60 秒抓一次，1 分鐘的區段只有一筆樣本，用量全部算成 0；
+# 2 分鐘的區段少抓一筆就從 66.7% 掉到 49.9%，那是取樣造成的假下凹。
+# 7 天用 30 分鐘（336 段）OpenCost 直接回 500，所以 7 天最細就是 1 小時。
 STEPS = dict(kv.split("=", 1) for kv in
-             os.environ.get("SERIES_STEPS", "1h=5m,24h=1h,7d=6h").split(",") if "=" in kv)
+             os.environ.get("SERIES_STEPS", "1h=5m,24h=10m,7d=1h").split(",") if "=" in kv)
 
 DEPT_KEYS = ("mfg", "rd", "it")          # 只是預設順序；實際部門以資料為準
 SYSTEM_NS = [p.strip() for p in os.environ.get(
@@ -377,8 +380,8 @@ def usage_series(window):
         span = nominal_minutes(window)
         if not span:
             return None
-        step = ("5m" if span <= 180 else "15m" if span <= 480 else
-                "1h" if span <= 2880 else "6h" if span <= 14400 else "1d")
+        step = ("5m" if span <= 180 else "10m" if span <= 2880 else
+                "1h" if span <= 14400 else "1d")
     try:
         params = {"window": window, "aggregate": "label:cost-center",
                   "accumulate": "false", "step": step}

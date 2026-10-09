@@ -88,7 +88,7 @@ KCFG=<kubeconfig 路徑> bash snapshotter/deploy.sh --apply # 部署快照器（
 換版本或換成自建的 registry：
 
 ```bash
-IMAGE_TAG=0.7.0 KCFG=… bash deploy.sh --apply
+IMAGE_TAG=0.8.0 KCFG=… bash deploy.sh --apply
 IMAGE=myregistry.local/cost-report:1.2.3 KCFG=… bash deploy.sh --apply
 ```
 
@@ -126,7 +126,7 @@ REGISTRY=<你的帳號> bash build-images.sh --push
 | `WINDOWS` | `1h,24h,7d` | 畫面可選的區間。**其他值會被拒絕**，避免有人下超大查詢把 Prometheus 打爆 |
 | `DEFAULT_WINDOW` | `24h` | 預設區間 |
 | `CLUSTER_LABEL` | 空 | 畫面上顯示的叢集名稱 |
-| `SERIES_STEPS` | `1h=5m,24h=1h,7d=6h` | 使用率折線圖每個區間的取樣間隔。點太密看不出趨勢，太疏會把日夜曲線抹平 |
+| `SERIES_STEPS` | `1h=5m,24h=10m,7d=1h` | 使用率折線圖每個區間的取樣間隔。點太密看不出趨勢，太疏會把日夜曲線抹平 |
 | `SYSTEM_NS_PREFIXES` | `kube-system,cattle-,…` | 這些 namespace 的元件不列進工作負載表（仍計入「無法分攤」） |
 | `PROM_URL` | `http://prometheus-server.prometheus-system.svc.cluster.local:80` | 量資料完整度用。連不上只是少一塊資訊，報表照常 |
 | `COVERAGE_JOB` | `opencost` | 用哪個 scrape job 判斷「這段有沒有量到」 |
@@ -171,8 +171,8 @@ REGISTRY=<你的帳號> bash build-images.sh --push
 
 | | |
 |---|---|
-| 報表服務 | `docker.io/yansheng133/cost-report:0.7.0` |
-| 快照器 | `docker.io/yansheng133/cost-snapshotter:0.7.0` |
+| 報表服務 | `docker.io/yansheng133/cost-report:0.8.0` |
+| 快照器 | `docker.io/yansheng133/cost-snapshotter:0.8.0` |
 | 架構 | `linux/amd64`、`linux/arm64` |
 | 基底 | `registry.suse.com/bci/python:3.12`，非 root（UID 1000）執行 |
 

@@ -1309,9 +1309,10 @@ function renderUsage() {
     if (i % every && i !== pts.length - 1) return;
     const x = lnX(p.ts, T0, T1);
     const t = mk("text", { x, y: LN.H - 8, "text-anchor": "middle" }, "ln-axis");
-    // 跨日就把日期也帶上，否則只有時分會看不出是哪一天
+    // 跨日就把日期也帶上，否則只有時分會看不出是哪一天。
+    // 要看「整段跨多久」不是「每點間隔多大」——7 天改成每小時一點以後，用間隔判斷就只剩時分。
     const d = p.start;
-    t.textContent = S.stepMinutes >= 360 ? d.slice(5, 10) + " " + d.slice(11, 16) : d.slice(11, 16);
+    t.textContent = T1 - T0 > 864e5 ? d.slice(5, 10) + " " + d.slice(11, 16) : d.slice(11, 16);
     svg.appendChild(t);
   });
 
