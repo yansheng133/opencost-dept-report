@@ -277,6 +277,7 @@
   .ln-axis { fill: var(--ink-3); font-size: 10px; font-variant-numeric: tabular-nums; }
   .ln-path { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
   .ln-dot { r: 3; stroke: var(--card); stroke-width: 1.5; }
+  .ln-mark { pointer-events: none; opacity: .75; }
   .ln-hit { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 3 3; }
   .ln-end { font-size: 11px; font-weight: 600; }
   .ln-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 12px;
@@ -915,7 +916,7 @@ function renderTrust() {
             ? `（快照本身完整度 ${f.snapshotCoveragePct}%）` : "")
        : "本期沒有使用任何推估，全部是實際量測"],
     ["缺漏區段", (cov.gaps || []).length ? (cov.gaps || []).length + " 段" : "無",
-     (cov.gaps || []).map(g => `${g.start} → ${g.end}（${g.minutes} 分鐘）`).join("；") || "這段期間沒有量測中斷"],
+     (cov.gaps || []).map(fmtGap).join("；") || "這段期間沒有量測中斷"],
     ["對帳", DATA.reconciliation && DATA.reconciliation.driftPct !== null
        ? DATA.reconciliation.driftPct + "%" : "—",
      DATA.reconciliation && DATA.reconciliation.assets
@@ -1200,7 +1201,7 @@ function renderMeta() {
   }
   document.body.classList.toggle("thin-sample", THIN());
   document.getElementById("t-total").textContent = n4(DATA.total);
-  document.getElementById("f-window").textContent = `${w.start} → ${w.end}（${w.minutes} 分鐘，查詢 ${w.query}）`;
+  document.getElementById("f-window").textContent = `${fmtLocal(w.start, true)} → ${fmtLocal(w.end, true)}（${w.minutes} 分鐘，查詢 ${w.query}）`;
   const fresh = document.getElementById("m-fresh");
   fresh.textContent = DATA.stale
     ? `${DATA.ageSeconds} 秒前（OpenCost 連線異常，顯示最後一次成功的資料）`
@@ -1225,7 +1226,7 @@ function renderMeta() {
         + `下面的金額可能少算了沒量到的時段，但目前無法判斷少了多少。`;
     } else if (c && c.available && c.pct < 99.5) {
       cov.className = "cov on";
-      const gaps = (c.gaps || []).map(g => `${g.start} → ${g.end}（${g.minutes} 分鐘）`).join("；");
+      const gaps = (c.gaps || []).map(fmtGap).join("；");
       cov.innerHTML = `<b>本期量測覆蓋率 ${c.pct}%</b>，缺少 ${c.gapMinutes} 分鐘的資料。`
         + `這段期間成本照樣發生（節點在跑、機器在折舊），所以下面的金額是<b>少算</b>，不是沒發生。`
         + `正式出帳前要先決定缺漏怎麼補，並在帳單上標示。`
@@ -1252,6 +1253,17 @@ function lnX(ts, t0, t1) {
 function lnY(v, maxY) {
   return LN.T + (LN.H - LN.T - LN.B) * (1 - v / maxY);
 }
+
+// API 給的時間都是 UTC（ISO 字串）。畫面上一律換成看的人所在的時區——
+// 直接切字串顯示的話，台灣的使用者看到的每個時間都差 8 小時。
+const pad2 = n => String(n).padStart(2, "0");
+function fmtLocal(iso, withDate) {
+  const t = new Date(iso);
+  if (isNaN(t)) return iso;
+  const hm = pad2(t.getHours()) + ":" + pad2(t.getMinutes());
+  return withDate ? pad2(t.getMonth() + 1) + "-" + pad2(t.getDate()) + " " + hm : hm;
+}
+const fmtGap = g => `${fmtLocal(g.start, true)} → ${fmtLocal(g.end, true)}（${g.minutes} 分鐘）`;
 
 function renderUsage() {
   const svg = document.getElementById("ln-svg");
@@ -1311,8 +1323,7 @@ function renderUsage() {
     const t = mk("text", { x, y: LN.H - 8, "text-anchor": "middle" }, "ln-axis");
     // 跨日就把日期也帶上，否則只有時分會看不出是哪一天。
     // 要看「整段跨多久」不是「每點間隔多大」——7 天改成每小時一點以後，用間隔判斷就只剩時分。
-    const d = p.start;
-    t.textContent = T1 - T0 > 864e5 ? d.slice(5, 10) + " " + d.slice(11, 16) : d.slice(11, 16);
+    t.textContent = fmtLocal(p.start, T1 - T0 > 864e5);
     svg.appendChild(t);
   });
 
@@ -1336,6 +1347,10 @@ function renderUsage() {
       }
       const d = seg.map(([x, y], i) => (i ? "L" : "M") + x.toFixed(1) + " " + y.toFixed(1)).join(" ");
       svg.appendChild(mk("path", { d, stroke: color }, "ln-path"));
+      // 每個取樣點畫一個小點。用量很平的時候，沒有這些點就看不出取樣有多密——
+      // 點太擠（間距小於 3 單位）就不畫，否則只會糊成一條粗線。
+      if (seg.length > 1 && (seg[seg.length - 1][0] - seg[0][0]) / (seg.length - 1) >= 3)
+        seg.forEach(([x, y]) => svg.appendChild(mk("circle", { cx: x.toFixed(1), cy: y.toFixed(1), r: 1.6, fill: color }, "ln-mark")));
     });
 
     // 直接標示在線的末端：四條以內用直接標示比圖例好找。
@@ -1403,7 +1418,7 @@ function renderUsage() {
         + (METRIC === "cpu" && raw.cpuReq ? `<span class="muted small">（申請 ${raw.cpuReq} 核，用 ${raw.cpuUse}）</span>` : "")
         + "</div>";
     });
-    tip.innerHTML = `<b>${esc(p.start.slice(5, 16).replace("T", " "))}</b>`
+    tip.innerHTML = `<b>${esc(fmtLocal(p.start, true))}</b>`
       + (p.depts ? ` 起 ${p.minutes} 分鐘` : " <span style='color:var(--warn)'>這個時段沒有量到資料</span>")
       + rows;
     tip.className = "ln-tip on";
@@ -1418,7 +1433,8 @@ function renderUsage() {
   });
 
   const miss = S.expected - S.covered;
-  note.innerHTML = `取樣間隔 ${S.step}，共 ${S.covered} 個點。`
+  const stepTxt = S.stepMinutes >= 60 ? (S.stepMinutes / 60) + " 小時" : S.stepMinutes + " 分鐘";
+  note.innerHTML = `每 ${stepTxt}一個點，共 ${S.covered} 個點；時間是你這台電腦的時區（${esc(Intl.DateTimeFormat().resolvedOptions().timeZone || "本地")}）。`
     + (miss > 0 ? `<b>有 ${miss} 個時段沒有資料，折線在那裡是斷開的</b>——`
                 + `把兩端連起來會讓缺漏看起來像真的量到過。` : "")
     + "　線末端的名稱是直接標示，滑過圖表看每個時間點的數字。";
