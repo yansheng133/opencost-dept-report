@@ -276,6 +276,8 @@
   .ln-grid line { stroke: var(--rule-soft); stroke-width: 1; }
   .ln-axis { fill: var(--ink-3); font-size: 10px; font-variant-numeric: tabular-nums; }
   .ln-path { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .ln-partial { stroke-dasharray: 4 4; opacity: .7; }
+  .ln-partial-dot { fill: var(--card); stroke-width: 1.5; pointer-events: none; }
   .ln-dot { r: 3; stroke: var(--card); stroke-width: 1.5; }
   .ln-mark { pointer-events: none; opacity: .75; }
   #ln-wrap.busy { opacity: .45; transition: opacity .2s; }
@@ -1365,6 +1367,13 @@ function renderUsage() {
                       .filter(p => !isNaN(p.ts));
   if (!pts.length) { note.textContent = "分段資料沒有可用的時間戳。"; return; }
   const T0 = pts[0].ts, T1 = pts[pts.length - 1].ts;
+  // **還沒過完的最後一段**：這一段的時間還沒走完，量到的分鐘數不足，
+  // 而且最近幾分鐘 OpenCost 還沒算完，數字通常偏低——畫成實線會像是用量突然掉下來。
+  // 只認「最後一個點、而且這一段的結束時間還在未來」；看過往的某一天時，
+  // 最後一段就算分鐘數不足也是資料缺漏，不是還沒過完，不能混為一談。
+  const lastP = pts[pts.length - 1];
+  const partialIdx = lastP.depts && lastP.minutes < S.stepMinutes * 0.9
+                     && lastP.ts + S.stepMinutes * 60000 > Date.now() ? pts.length - 1 : -1;
   const depts = DATA.depts.map(d => d.id);
   const val = (p, id) => {
     if (!p.depts) return null;                 // 整段沒有資料
@@ -1417,13 +1426,22 @@ function renderUsage() {
     const color = COLOR[id] || "var(--ink-3)";
     // **資料缺的地方要把線斷開。** 把相隔很久的兩個點連起來，中間那條線
     // 看起來跟真的量到一樣——而那段可能是監控掛掉，不是使用率真的走成那樣。
-    let segs = [], cur = [];
+    let segs = [], cur = [], tail = null;
     pts.forEach((p, i) => {
       const v = val(p, id);
       if (v === null) { if (cur.length) segs.push(cur); cur = []; return; }
-      cur.push([lnX(p.ts, T0, T1), lnY(v, maxY)]);
+      const xy = [lnX(p.ts, T0, T1), lnY(v, maxY)];
+      // 還沒過完的最後一段另外畫成虛線，從前一個點連過去
+      if (i === partialIdx) { tail = { from: cur.length ? cur[cur.length - 1] : null, to: xy }; return; }
+      cur.push(xy);
     });
     if (cur.length) segs.push(cur);
+    if (tail) {
+      if (tail.from)
+        svg.appendChild(mk("path", { d: `M${tail.from[0].toFixed(1)} ${tail.from[1].toFixed(1)} L${tail.to[0].toFixed(1)} ${tail.to[1].toFixed(1)}`,
+                                     stroke: color }, "ln-path ln-partial"));
+      svg.appendChild(mk("circle", { cx: tail.to[0].toFixed(1), cy: tail.to[1].toFixed(1), r: 2.4, stroke: color }, "ln-partial-dot"));
+    }
 
     segs.forEach(seg => {
       if (seg.length === 1) {
@@ -1505,6 +1523,7 @@ function renderUsage() {
     });
     tip.innerHTML = `<b>${esc(fmtLocal(p.start, true))}</b>`
       + (p.depts ? ` 起 ${p.minutes} 分鐘` : " <span style='color:var(--warn)'>這個時段沒有量到資料</span>")
+      + (best === partialIdx ? `<div class="muted small">這一段還沒過完（每 ${stepLabel(S.step)}一段），數字會再變</div>` : "")
       + rows;
     tip.className = "ln-tip on";
     const tx = Math.min(Math.max(x / LN.W * r.width - tip.offsetWidth / 2, 4),
@@ -1522,6 +1541,7 @@ function renderUsage() {
   note.innerHTML = `每 ${stepTxt}一個點，共 ${S.covered} 個點；時間是你這台電腦的時區（${esc(Intl.DateTimeFormat().resolvedOptions().timeZone || "本地")}）。`
     + (miss > 0 ? `<b>有 ${miss} 個時段沒有資料，折線在那裡是斷開的</b>——`
                 + `把兩端連起來會讓缺漏看起來像真的量到過。` : "")
+    + (partialIdx >= 0 ? "　<b>最後一小段是虛線</b>：那一段還沒過完，最近幾分鐘也還沒算進去，數字通常偏低。" : "")
     + "　線末端的名稱是直接標示，滑過圖表看每個時間點的數字。";
 }
 

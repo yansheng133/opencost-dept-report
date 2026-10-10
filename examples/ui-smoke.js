@@ -413,6 +413,22 @@ function check(ok, what, detail) {
     check(future.length === 0, "折線圖的時間軸不會延伸到未來", JSON.stringify(future));
   }
 
+  // ── 還沒過完的最後一段畫成虛線 ──
+  // 虛線只能出現在「最後一個點、而且那一段的結束時間還在未來」。
+  // 看過往某一天時最後一段就算分鐘數不足也是資料缺漏，畫成虛線會讓缺漏看起來像「還在量」。
+  const partial = await page.evaluate(() => {
+    if (typeof DATA === "undefined" || !DATA.series || !DATA.series.points.length) return null;
+    const S = DATA.series, L = S.points[S.points.length - 1];
+    const unfinished = !!L.depts && L.minutes < S.stepMinutes * 0.9
+                       && Date.parse(L.start) + S.stepMinutes * 60000 > Date.now();
+    return { unfinished, dashed: document.querySelectorAll("#ln-svg path.ln-partial, #ln-svg circle.ln-partial-dot").length };
+  });
+  if (partial) {
+    check(partial.unfinished ? partial.dashed > 0 : partial.dashed === 0,
+          partial.unfinished ? "還沒過完的最後一段畫成虛線" : "最後一段已經過完（或是資料缺漏），沒有虛線",
+          JSON.stringify(partial));
+  }
+
   // ── 取樣間隔：使用者自己選 ──
   // 後端有額度（60 秒內合計 300 段），所以「點了之後成功」不一定成立；
   // 這裡驗的是不論成功或被擋，畫面、按鈕、網址三者都一致。
