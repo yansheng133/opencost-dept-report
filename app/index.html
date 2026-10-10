@@ -278,6 +278,7 @@
   .ln-path { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
   .ln-dot { r: 3; stroke: var(--card); stroke-width: 1.5; }
   .ln-mark { pointer-events: none; opacity: .75; }
+  #ln-wrap.busy { opacity: .45; transition: opacity .2s; }
   .ln-hit { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 3 3; }
   .ln-end { font-size: 11px; font-weight: 600; }
   .ln-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 12px;
@@ -419,6 +420,10 @@
           <label><input type="radio" name="metric" id="met-cpu" value="cpu" checked> CPU</label>
           <label><input type="radio" name="metric" id="met-ram" value="ram"> 記憶體</label>
         </div>
+      </fieldset>
+      <fieldset id="fs-step" hidden>
+        <legend>取樣間隔</legend>
+        <div class="seg" id="seg-step"></div>
       </fieldset>
     </div>
     <div class="chartwrap" id="ln-wrap">
@@ -1265,7 +1270,87 @@ function fmtLocal(iso, withDate) {
 }
 const fmtGap = g => `${fmtLocal(g.start, true)} → ${fmtLocal(g.end, true)}（${g.minutes} 分鐘）`;
 
+// ── 取樣間隔 ──────────────────────────────────────────────────────────────
+// 使用者選的間隔記在網址的 ?step=，分享連結時對方看到同一張圖。
+// 不放在 #hash：hash 已經拿來跳到某一節，#step=5m 會讓 querySelector 直接丟例外。
+let STEP = (() => { try { return new URLSearchParams(location.search).get("step"); } catch (e) { return null; } })();
+let SERIES_SEQ = 0;
+const STEP_UNIT = { m: " 分鐘", h: " 小時", d: " 天" };
+const stepLabel = s => STEP_UNIT[s.slice(-1)] ? s.slice(0, -1) + STEP_UNIT[s.slice(-1)] : s;
+
+function seriesQuery(step) {
+  const q = VIEW.day ? "day=" + encodeURIComponent(VIEW.day)
+                     : "window=" + encodeURIComponent(VIEW.win || DATA.window.query);
+  return "api/series?" + q + "&step=" + encodeURIComponent(step);
+}
+async function fetchSeries(step) {
+  const res = await fetch(seriesQuery(step), { cache: "no-store" });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+  return body;
+}
+// 使用者選的間隔在這個區間能不能用。不能用（例如從 24 小時的 5 分切到 7 天）就退回預設，
+// 但**不清掉**偏好——切回 24 小時時應該還是 5 分。
+const wantStep = S => STEP && S && (S.options || []).includes(STEP) && STEP !== S.step ? STEP : null;
+
+function setStepInUrl(step, dflt) {
+  try {
+    const u = new URL(location.href);
+    if (step && step !== dflt) u.searchParams.set("step", step); else u.searchParams.delete("step");
+    history.replaceState(null, "", u);
+  } catch (e) {}
+}
+
+function renderStepSeg() {
+  const fs = document.getElementById("fs-step"), seg = document.getElementById("seg-step");
+  if (!fs || !seg) return;
+  const S = DATA && DATA.series;
+  const opts = (S && S.options) || [];
+  fs.hidden = opts.length < 2;
+  seg.textContent = "";
+  opts.forEach(o => {
+    const l = document.createElement("label");
+    l.innerHTML = `<input type="radio" name="step" value="${esc(o)}"${o === S.step ? " checked" : ""}> ${esc(stepLabel(o))}`;
+    seg.appendChild(l);
+  });
+}
+
+async function changeStep(step) {
+  const S = DATA && DATA.series;
+  if (!S) return;
+  if (step === S.step) return;
+  // 預設間隔的資料主報表本來就有（背景每 60 秒更新），直接換回去，不必再問 OpenCost
+  if (DATA.baseSeries && step === DATA.baseSeries.step) {
+    STEP = step; setStepInUrl(step, S.defaultStep);
+    DATA.series = DATA.baseSeries; renderUsage();
+    return;
+  }
+  const seq = ++SERIES_SEQ;
+  const note = document.getElementById("ln-note");
+  // 細的間隔要跑好幾秒（24 小時每 5 分鐘約 6 秒）。沒有提示的話看起來像按了沒反應。
+  note.textContent = `載入每 ${stepLabel(step)}一個點的資料…`;
+  document.getElementById("ln-wrap").classList.add("busy");
+  try {
+    const fresh = await fetchSeries(step);
+    if (seq !== SERIES_SEQ) return;          // 連點兩顆按鈕時，慢的那個不可以蓋掉快的
+    // 查到了才記下偏好與網址；失敗時網址若先改了，就會跟畫面上的圖對不起來
+    STEP = step; setStepInUrl(step, S.defaultStep);
+    DATA.series = fresh;
+    renderUsage();
+  } catch (e) {
+    if (seq !== SERIES_SEQ) return;
+    renderUsage();                           // 畫回原本的圖，按鈕也回到原本那顆
+    note.textContent = `取不到每 ${stepLabel(step)}一個點的資料：${e.message}。目前顯示的仍是每 ${stepLabel(S.step)}一個點。`;
+  } finally {
+    if (seq === SERIES_SEQ) document.getElementById("ln-wrap").classList.remove("busy");
+  }
+}
+document.getElementById("seg-step").addEventListener("change", e => {
+  if (e.target && e.target.name === "step") changeStep(e.target.value);
+});
+
 function renderUsage() {
+  renderStepSeg();
   const svg = document.getElementById("ln-svg");
   const legend = document.getElementById("ln-legend");
   const note = document.getElementById("ln-note");
@@ -1433,7 +1518,7 @@ function renderUsage() {
   });
 
   const miss = S.expected - S.covered;
-  const stepTxt = S.stepMinutes >= 60 ? (S.stepMinutes / 60) + " 小時" : S.stepMinutes + " 分鐘";
+  const stepTxt = stepLabel(S.step);
   note.innerHTML = `每 ${stepTxt}一個點，共 ${S.covered} 個點；時間是你這台電腦的時區（${esc(Intl.DateTimeFormat().resolvedOptions().timeZone || "本地")}）。`
     + (miss > 0 ? `<b>有 ${miss} 個時段沒有資料，折線在那裡是斷開的</b>——`
                 + `把兩端連起來會讓缺漏看起來像真的量到過。` : "")
@@ -1610,6 +1695,14 @@ async function load(win, day) {
       const mres = await fetch("api/periods", { cache: "no-store" });
       MONTHS = mres.ok ? ((await mres.json()).months || []) : [];
     } catch (e) { SEALS = []; MONTHS = []; }
+    // 使用者選過別的取樣間隔：自動更新時要維持，不然每 60 秒就被打回預設。
+    // 後端對這種查詢有 5 分鐘快取，所以每分鐘多問一次不會加重 OpenCost。
+    DATA.baseSeries = DATA.series;           // 預設間隔那一份留著，選回預設時直接用
+    const want = wantStep(DATA.series);
+    if (want) {
+      try { DATA.series = await fetchSeries(want); }
+      catch (e) { console.warn("取樣間隔", want, "取不到，改用預設：", e.message); }
+    }
     if (seq !== LOAD_SEQ) return;
     buildSegs(); renderMeta(); renderAll();
   } catch (e) {

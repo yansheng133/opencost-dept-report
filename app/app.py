@@ -33,6 +33,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import billing
+import steps
 
 OPENCOST_URL = os.environ.get("OPENCOST_URL", "http://opencost.opencost.svc.cluster.local:9003").rstrip("/")
 CACHE_TTL = int(os.environ.get("CACHE_TTL", "60"))
@@ -63,6 +64,9 @@ SEAL_WINDOW = os.environ.get("SEAL_WINDOW", "24h")   # 封存用的區間長度�
 # 7 天用 30 分鐘（336 段）OpenCost 直接回 500，所以 7 天最細就是 1 小時。
 STEPS = dict(kv.split("=", 1) for kv in
              os.environ.get("SERIES_STEPS", "1h=5m,24h=10m,7d=1h").split(",") if "=" in kv)
+# 使用者從畫面上改間隔時的快取。只在有人點的時候才查，查完留一段時間，
+# 不跟著 /api/report 每 60 秒背景更新——那樣等於讓 OpenCost 一直跑最重的查詢。
+SERIES_TTL = int(os.environ.get("SERIES_TTL", "300"))
 
 DEPT_KEYS = ("mfg", "rd", "it")          # 只是預設順序；實際部門以資料為準
 SYSTEM_NS = [p.strip() for p in os.environ.get(
@@ -73,6 +77,10 @@ GIB = 1024 ** 3
 MIB = 1024 ** 2
 
 _cache = {}          # window -> {"data": ..., "fetched": ts, "stale": bool, "error": str|None}
+_series_cache = {}   # (window, step) -> (fetched_ts, series)
+# 使用者自選間隔的查詢一次只跑一個，而且一段時間內有總量上限——理由見 steps.Budget
+_series_query_lock = threading.Lock()
+_series_budget = steps.Budget(int(os.environ.get("SERIES_BUDGET", "300")), 60.0)
 _lock = threading.Lock()
 _ready = threading.Event()
 
@@ -363,7 +371,7 @@ def declared_fill(gaps, rates):
     }
 
 
-def usage_series(window):
+def usage_series(window, step=None):
     """各部門的使用率隨時間變化。
 
     使用率 = 實際用量 ÷ 申請量。這跟帳單金額是兩回事：金額看的是「付了多少」，
@@ -373,15 +381,13 @@ def usage_series(window):
     **沒有資料的區段要讓折線斷開，不可以內插。** 把兩個相隔三天的點連起來，
     中間那條線看起來跟真的量到一樣，而那三天可能是監控掛掉。
     """
-    step = STEPS.get(window)
+    # 指定日期之類的絕對區間不在 STEPS 裡，照區間長度挑一個合適的間隔。
+    # 沒有這一段的話，選了某一天就完全沒有折線圖——加了日期查詢卻忘了教它。
+    span = nominal_minutes(window)
+    default = steps.default_step(span, STEPS.get(window))
+    step = step or default
     if not step:
-        # 指定日期之類的絕對區間不在 STEPS 裡，照區間長度挑一個合適的間隔。
-        # 沒有這一段的話，選了某一天就完全沒有折線圖——加了日期查詢卻忘了教它。
-        span = nominal_minutes(window)
-        if not span:
-            return None
-        step = ("5m" if span <= 180 else "10m" if span <= 2880 else
-                "1h" if span <= 14400 else "1d")
+        return None
     try:
         params = {"window": window, "aggregate": "label:cost-center",
                   "accumulate": "false", "step": step}
@@ -466,7 +472,8 @@ def usage_series(window):
     if not covered:
         return None
     return {"step": step, "stepMinutes": step_min, "points": points,
-            "covered": covered, "expected": len(segments)}
+            "covered": covered, "expected": len(segments),
+            "options": steps.options(span), "defaultStep": default}
 
 
 def build_report(window):
@@ -637,6 +644,24 @@ def build_report(window):
     }
 
 
+def _window_from_query(qs):
+    """把查詢參數換成 OpenCost 的 window。回傳 (window, 錯誤訊息)。
+
+    指定某一天：?day=2026-09-24 換成一段絕對區間。
+    只接受「整天」，所以不可能有人下一個超大的查詢把 Prometheus 打爆——
+    這是當初用白名單限制區間的理由，換成日期之後這個保護要留著。
+    """
+    day = (qs.get("day") or [""])[0].strip()
+    if day:
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+            return None, "day 的格式要是 YYYY-MM-DD"
+        return f"{day}T00:00:00Z,{day}T23:59:59Z", None
+    window = (qs.get("window") or [DEFAULT_WINDOW])[0]
+    if window not in WINDOWS:
+        return None, f"window 必須是 {WINDOWS} 其中之一，或用 day=YYYY-MM-DD"
+    return window, None
+
+
 def refresh(window):
     try:
         data = build_report(window)
@@ -747,23 +772,59 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200 if _ready.is_set() else 503,
                               "ready\n" if _ready.is_set() else "waiting for first fetch\n",
                               "text/plain; charset=utf-8")
+        if path in ("/api/report", "/api/series"):
+            window, err = _window_from_query(qs)
+            if err:
+                return self._send(400, json.dumps({"error": err}, ensure_ascii=False),
+                                  "application/json; charset=utf-8")
+        if path == "/api/series":
+            # 使用者自己挑取樣間隔。只接受白名單裡的組合，理由見 steps.py。
+            span = nominal_minutes(window)
+            step = (qs.get("step") or [""])[0].strip()
+            if not steps.is_allowed(span, step):
+                return self._send(400, json.dumps(
+                    {"error": f"這個區間只能選 {steps.options(span)}", "options": steps.options(span)},
+                    ensure_ascii=False), "application/json; charset=utf-8")
+            key = (window, step)
+            fresh = lambda h: h and time.time() - h[0] <= SERIES_TTL
+            # 預設間隔的那一份主報表已經有了（背景更新），直接給，不算額度
+            with _lock:
+                rep_entry = _cache.get(window) or {}
+            base = (rep_entry.get("data") or {}).get("series")
+            if base and base.get("step") == step:
+                return self._send(200, json.dumps(dict(base, ageSeconds=round(time.time() - rep_entry["fetched"])),
+                                                  ensure_ascii=False),
+                                  "application/json; charset=utf-8")
+            with _lock:
+                hit = _series_cache.get(key)
+            if not fresh(hit):
+                with _series_query_lock:
+                    with _lock:                 # 排隊的時候別人可能已經查好了
+                        hit = _series_cache.get(key)
+                    if not fresh(hit):
+                        segs = int(span / steps.STEP_MINUTES[step] + 0.999)
+                        allowed, wait = _series_budget.try_take(segs, time.time())
+                        if not allowed:
+                            return self._send(429, json.dumps(
+                                {"error": f"OpenCost 剛跑完一個大查詢，請 {wait} 秒後再試"
+                                          f"（連續的大查詢會讓它連不上 Prometheus，連帳務報表都查不到）",
+                                 "retryAfter": wait}, ensure_ascii=False),
+                                "application/json; charset=utf-8", {"Retry-After": str(wait)})
+                        data = usage_series(window, step)
+                        if data is None:
+                            return self._send(502, json.dumps({"error": "OpenCost 沒有回傳這個區間的分段資料"},
+                                                              ensure_ascii=False),
+                                              "application/json; charset=utf-8")
+                        hit = (time.time(), data)
+                        with _lock:
+                            _series_cache[key] = hit
+                            # 指定日期可以一直換，快取不能無限長大
+                            for k in [k for k, v in _series_cache.items() if time.time() - v[0] > SERIES_TTL]:
+                                _series_cache.pop(k, None)
+            return self._send(200, json.dumps(dict(hit[1], ageSeconds=round(time.time() - hit[0])),
+                                              ensure_ascii=False),
+                              "application/json; charset=utf-8")
         if path == "/api/report":
-            # 指定某一天：?day=2026-09-24 換成一段絕對區間。
-            # 只接受「整天」，所以不可能有人下一個超大的查詢把 Prometheus 打爆——
-            # 這是當初用白名單限制區間的理由，換成日期之後這個保護要留著。
-            day = (qs.get("day") or [""])[0].strip()
-            if day:
-                if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
-                    return self._send(400, json.dumps({"error": "day 的格式要是 YYYY-MM-DD"},
-                                                      ensure_ascii=False),
-                                      "application/json; charset=utf-8")
-                window = f"{day}T00:00:00Z,{day}T23:59:59Z"
-            else:
-                window = (qs.get("window") or [DEFAULT_WINDOW])[0]
-                if window not in WINDOWS:
-                    return self._send(400, json.dumps({"error": f"window 必須是 {WINDOWS} 其中之一，或用 day=YYYY-MM-DD"},
-                                                      ensure_ascii=False),
-                                      "application/json; charset=utf-8")
             with _lock:
                 entry = dict(_cache.get(window) or {})
             if not entry.get("data") and not refresh(window):

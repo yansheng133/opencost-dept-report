@@ -413,6 +413,40 @@ function check(ok, what, detail) {
     check(future.length === 0, "折線圖的時間軸不會延伸到未來", JSON.stringify(future));
   }
 
+  // ── 取樣間隔：使用者自己選 ──
+  // 後端有額度（60 秒內合計 300 段），所以「點了之後成功」不一定成立；
+  // 這裡驗的是不論成功或被擋，畫面、按鈕、網址三者都一致。
+  const stepState = () => page.evaluate(() => {
+    const S = typeof DATA !== "undefined" && DATA.series;
+    return {
+      hidden: document.getElementById("fs-step").hidden,
+      opts: [...document.querySelectorAll("#seg-step input")].map(i => i.value),
+      checked: (document.querySelector("#seg-step input:checked") || {}).value,
+      step: S && S.step, options: S && S.options, dflt: S && S.defaultStep,
+      url: location.search, note: document.getElementById("ln-note").textContent,
+    };
+  });
+  let ss = await stepState();
+  if (ss.options && ss.options.length > 1) {
+    check(!ss.hidden && ss.opts.join() === ss.options.join() && ss.checked === ss.step,
+          "取樣間隔按鈕跟後端給的選項一致，目前的間隔亮著", JSON.stringify(ss));
+    const pick = ss.options.filter(o => o !== ss.step).pop();
+    await page.click(`#seg-step label:has(input[value="${pick}"])`);
+    await page.waitForFunction(p => DATA.series.step === p ||
+                                    /秒後再試|取不到/.test(document.getElementById("ln-note").textContent),
+                               pick, { timeout: 30000 }).catch(() => {});
+    ss = await stepState();
+    check(ss.checked === ss.step && ss.url.includes("step=") === (ss.step !== ss.dflt),
+          `改選 ${pick} 之後（成功或被額度擋下都算），按鈕、圖、網址三者一致`, JSON.stringify(ss));
+    await page.click(`#seg-step label:has(input[value="${ss.dflt}"])`);
+    await page.waitForTimeout(500);
+    ss = await stepState();
+    check(ss.step === ss.dflt && !ss.url.includes("step="),
+          "選回預設立刻生效（主報表本來就有這一份，不吃額度），網址不留 step", JSON.stringify(ss));
+  } else {
+    console.log("SKIP  取樣間隔（這個區間只有一種間隔可選）");
+  }
+
   check(errors.length === 0, "沒有 JavaScript 錯誤", errors.join(" | "));
   check(warnings.length === 0, "沒有觸發收合的安全網（有的話代表版面結構壞了）", warnings.join(" | "));
 

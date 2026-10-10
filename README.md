@@ -88,7 +88,7 @@ KCFG=<kubeconfig 路徑> bash snapshotter/deploy.sh --apply # 部署快照器（
 換版本或換成自建的 registry：
 
 ```bash
-IMAGE_TAG=0.8.1 KCFG=… bash deploy.sh --apply
+IMAGE_TAG=0.9.0 KCFG=… bash deploy.sh --apply
 IMAGE=myregistry.local/cost-report:1.2.3 KCFG=… bash deploy.sh --apply
 ```
 
@@ -126,7 +126,9 @@ REGISTRY=<你的帳號> bash build-images.sh --push
 | `WINDOWS` | `1h,24h,7d` | 畫面可選的區間。**其他值會被拒絕**，避免有人下超大查詢把 Prometheus 打爆 |
 | `DEFAULT_WINDOW` | `24h` | 預設區間 |
 | `CLUSTER_LABEL` | 空 | 畫面上顯示的叢集名稱 |
-| `SERIES_STEPS` | `1h=5m,24h=10m,7d=1h` | 使用率折線圖每個區間的取樣間隔。點太密看不出趨勢，太疏會把日夜曲線抹平 |
+| `SERIES_STEPS` | `1h=5m,24h=10m,7d=1h` | 使用率折線圖每個區間的**預設**取樣間隔。點太密看不出趨勢，太疏會把日夜曲線抹平 |
+| `SERIES_TTL` | `300` | 使用者自選取樣間隔的結果快取幾秒 |
+| `SERIES_BUDGET` | `300` | 使用者自選取樣間隔時，60 秒內最多讓 OpenCost 算幾段（理由見下方 `/api/series`） |
 | `SYSTEM_NS_PREFIXES` | `kube-system,cattle-,…` | 這些 namespace 的元件不列進工作負載表（仍計入「無法分攤」） |
 | `PROM_URL` | `http://prometheus-server.prometheus-system.svc.cluster.local:80` | 量資料完整度用。連不上只是少一塊資訊，報表照常 |
 | `COVERAGE_JOB` | `opencost` | 用哪個 scrape job 判斷「這段有沒有量到」 |
@@ -144,6 +146,7 @@ REGISTRY=<你的帳號> bash build-images.sh --push
 | `GET /api/report?window=24h` | JSON，給其他系統取用 |
 | `GET /api/report?day=2026-09-24` | **指定某一天**的完整報表。只接受整天，所以不會有人下超大的查詢把 Prometheus 打爆 |
 | `GET /api/seals` | 已封存的帳期清單，含雜湊完整性驗證 |
+| `GET /api/series?window=24h&step=5m` | 只要使用率折線圖，自己挑取樣間隔（也接受 `day=`）。只收白名單裡的組合：不小於 5 分鐘（Prometheus 每 60 秒抓一次，更細會算出 0 或假下凹）、一張圖不超過 288 點。60 秒內合計超過 `SERIES_BUDGET` 段回 **429** 並帶 `Retry-After`——實測連續兩個大查詢會讓 OpenCost 用完連往 Prometheus 的連接埠（`cannot assign requested address`），**連帳務報表都一起失敗** |
 | `GET /api/periods` | **按月彙總的帳期**。來源是封存不是 Prometheus，所以查得到 retention 以外的月份 |
 | `GET /api/seal?day=YYYY-MM-DD` | 單一帳期的完整封存內容 |
 | `GET /healthz` | liveness：行程活著就回 200（OpenCost 掛掉不重啟自己） |
@@ -171,8 +174,8 @@ REGISTRY=<你的帳號> bash build-images.sh --push
 
 | | |
 |---|---|
-| 報表服務 | `docker.io/yansheng133/cost-report:0.8.1` |
-| 快照器 | `docker.io/yansheng133/cost-snapshotter:0.8.1` |
+| 報表服務 | `docker.io/yansheng133/cost-report:0.9.0` |
+| 快照器 | `docker.io/yansheng133/cost-snapshotter:0.9.0` |
 | 架構 | `linux/amd64`、`linux/arm64` |
 | 基底 | `registry.suse.com/bci/python:3.12`，非 root（UID 1000）執行 |
 

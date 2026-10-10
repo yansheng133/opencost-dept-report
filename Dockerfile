@@ -12,7 +12,7 @@ LABEL org.opencontainers.image.title="cost-report" \
       org.opencontainers.image.revision="${REVISION}"
 
 WORKDIR /app
-COPY app/app.py app/billing.py app/index.html /app/
+COPY app/app.py app/billing.py app/steps.py app/index.html /app/
 # 價目表烤一份預設值進來，正式環境用 ConfigMap 蓋掉 /config/ratecard.json。
 # 單價是政策不是程式——改價不該需要重新建置映像檔。
 COPY app/ratecard.json /config/ratecard.json
