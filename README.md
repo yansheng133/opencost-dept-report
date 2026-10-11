@@ -10,6 +10,9 @@
 OpenCost 自己的 UI 是給平台團隊看的：它按 namespace 和工作負載呈現，沒有「這個部門要付多少」的視角，
 而且**經 Rancher 的服務代理打開是空白頁**。這個專案補上那一層。
 
+跟原生 OpenCost 差在哪，見[〈跟原生 OpenCost 差在哪〉](#vs-opencost)。
+English: [How this differs from stock OpenCost](#vs-opencost-en).
+
 ## 畫面上有什麼
 
 | 區塊 | 回答什麼問題 |
@@ -48,6 +51,94 @@ OpenCost 自己的 UI 是給平台團隊看的：它按 namespace 和工作負�
 - 帳單不是算出來就能發，**要先通過關卡**。畫面最上方把五項檢查攤開，
   包含每一項的政策門檻與「為什麼要檢查它」。
 - 成熟度階梯說明**跳階不會成功**：標籤還沒治理好就開始收錢，時間會全花在吵數字。
+
+<a id="vs-opencost"></a>
+## 跟原生 OpenCost 差在哪
+
+**一句話：金額全部來自 OpenCost，這裡沒有重算任何成本。多出來的是上面那一層——
+把「每個東西花了多少」變成「可以向各部門收的帳單，以及這份帳單可不可信」。**
+OpenCost 回答「這個 Pod、namespace、標籤花了多少」；這個專案回答「各部門該付多少、
+數字完整到可以出帳了嗎、分不出去的錢誰付」。
+
+### 跟原生一樣（直接沿用 OpenCost，沒有改）
+
+- **成本計算**：每個工作負載的 CPU、記憶體、儲存金額都是 OpenCost 算的，原封不動。
+- **依標籤分攤**：用 `cost-center`、`env` 彙總，是 OpenCost 本身的 aggregate 功能。
+- **閒置成本**：獨立列帳或按比例攤回，用的是 OpenCost 的 `shareIdle` 選項。
+- **效率**：工作負載的 CPU／記憶體「申請 vs 實際」來自 OpenCost。
+
+### 這裡多做的（原生沒有）
+
+| 加了什麼 | 解決什麼問題 |
+|---|---|
+| 部門視角與月推估 | OpenCost 是技術視角；部門主管要的是「我這個月付多少」 |
+| **能不能出帳**（五項檢查） | 覆蓋率、推估佔比、對帳、單價一致性、標籤治理。OpenCost 只給數字，不告訴你數字能不能信 |
+| 資料完整度 | 跟 Prometheus 對：有沒有斷層、斷在哪。監控斷掉時 OpenCost 會**無聲少算** |
+| 斷層補值（快照器） | 用 API server 記錄的申請量當第二份依據補回，並標示為「推估」。OpenCost 不補 |
+| 版本化價目表 | 生效日、訂定者、原因，並檢查 OpenCost 實際用的單價跟價目表一致。OpenCost 只用當下設定的單價，沒有費率歷史 |
+| 帳期封存 | 每天結帳凍結並附雜湊，事後不能改。OpenCost 每次查詢都重算，資料超過 Prometheus 的保存期限後帳就無法重現 |
+| 按月彙總 | 從封存加總，所以 Prometheus 的資料過期之後仍然查得到 |
+| **儲存空間：申請 vs 實際** | OpenCost 照申請容量收費，沒有實際用量；local-path 的 PVC 連用量指標都沒有，所以另外附了量測元件 |
+| 無法分攤與下一步 | 分出「系統元件」與「沒標籤的應用」，列出該補標籤的 namespace 與金額 |
+| 使用率趨勢（自選取樣間隔） | 間隔與查詢額度都是實測出來的界線：查得太細會讓 OpenCost 用完連往 Prometheus 的連接埠，連帳務報表一起失敗 |
+
+### 刻意沒做的（也是跟商用產品的差距）
+
+- **沒有登入與權限**：跟 OpenCost 一樣，連得到就看得到全部部門。
+- **只看單一叢集**：沒有跨叢集彙總。
+- **沒有接雲端帳單**：OpenCost 有雲端成本功能，這裡沒有串。
+- **自己維護**：不在 OpenCost 上游，也沒有任何廠商的支援。
+
+### 這代表什麼
+
+原生 OpenCost 已經夠用來**讓大家看到成本**（showback）。
+要真的**向部門收錢**（chargeback），缺的正是上面那一層治理：數字可不可信、單價可不可追溯、
+帳出了之後會不會變。這個專案是「要收錢之前得補哪些東西」的可運作示範，不是可以直接交給客戶的產品。
+
+<a id="vs-opencost-en"></a>
+## How this differs from stock OpenCost
+
+**In short: every cost figure comes from OpenCost — nothing is recalculated here. What this project adds
+is the layer on top: turning "what each thing cost" into "a bill you can charge each department, and
+whether that bill can be trusted."** OpenCost answers *how much did this pod, namespace or label cost*.
+This project answers *how much does each department owe, is the data complete enough to bill, and who
+pays for what can't be attributed*.
+
+### Same as stock OpenCost (used as-is)
+
+- **Cost calculation**: CPU, memory and storage cost per workload are OpenCost's numbers, unchanged.
+- **Label-based allocation**: grouping by `cost-center` and `env` uses OpenCost's own aggregation.
+- **Idle cost**: listing it separately or sharing it out uses OpenCost's `shareIdle` option.
+- **Efficiency**: requested vs. actual CPU and memory per workload come from OpenCost.
+
+### What this adds (not in stock OpenCost)
+
+| Addition | Problem it solves |
+|---|---|
+| Department view and monthly projection | OpenCost is an engineering view; a department head wants "what do I pay this month" |
+| **Billing gate** (five checks) | Coverage, share of estimated cost, reconciliation, rate consistency, label governance. OpenCost gives you a number, not whether you can trust it |
+| Data completeness | Checked against Prometheus: are there gaps, and where. When monitoring drops out, OpenCost **under-counts silently** |
+| Gap backfill (snapshotter) | Fills gaps from the requests recorded by the API server as a second source, marked as "estimated". OpenCost does not backfill |
+| Versioned rate card | Effective date, owner and reason for each rate, plus a check that the rates OpenCost actually used match the card. OpenCost only uses the currently configured price, with no rate history |
+| Billing-period sealing | Each day is frozen with a hash so it can't be changed later. OpenCost recomputes on every query; once data ages out of Prometheus retention, the bill can no longer be reproduced |
+| Monthly roll-up | Summed from the seals, so it still works after the Prometheus data has expired |
+| **Storage: requested vs. actual** | OpenCost bills PVCs by requested capacity and has no actual-usage figure; local-path PVCs don't even have a usage metric, so an optional collector is included |
+| Unallocated cost and next steps | Separates platform components from unlabeled apps, and lists which namespaces need a label and how much money is involved |
+| Usage trend with selectable sampling interval | The allowed intervals and query budget are measured limits: queries that are too fine make OpenCost run out of ports to Prometheus and take the billing report down with them |
+
+### Deliberately not done (also the gap to a commercial product)
+
+- **No login or access control**: like OpenCost itself, anyone who can reach it sees every department.
+- **Single cluster only**: no cross-cluster roll-up.
+- **No cloud bill integration**: OpenCost has cloud cost features; they aren't wired in here.
+- **Self-maintained**: not part of upstream OpenCost and not covered by any vendor's support.
+
+### What this means
+
+Stock OpenCost is enough for **showback** — making cost visible. To actually **charge back** to
+departments, what's missing is exactly the governance layer above: can the numbers be trusted, can the
+rates be traced, and does a bill stay fixed once it's issued. This project is a working demonstration of
+what has to be added before you start charging — not a product to hand to a customer as-is.
 
 ## 這個服務做了什麼、沒做什麼
 
