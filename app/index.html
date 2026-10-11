@@ -469,9 +469,30 @@
     <div class="notes" id="wl-notes"></div>
   </section>
 
+  <section id="storage" data-nav="儲存空間">
+    <div class="sec-head">
+      <h2>五、儲存空間：申請了多少、用了多少</h2>
+    <div class="decide" style="margin-top:10px"><span class="k">你要做的決定</span>
+      <b>儲存空間照申請量收，還是照用量收？</b>OpenCost 照申請量收——申請 2 GiB、只放 1 MB，帳單照 2 GiB 算。
+      這會逼大家申請多少用多少，方向是對的；但要注意 PVC <b>只能放大、不能縮小</b>，想改小就得搬資料。
+      務實的做法是：新申請照實際需求加成長空間估；既有申請過大的，排進下一次搬遷或改版時調整。</div>
+      <p class="muted small">金額來自 OpenCost（<strong>申請容量</strong> × 掛載時數 × 單價），跟實際放了多少無關。實際用量是在節點上量目錄大小得到的；
+      閒置金額用區間內的<strong>最高用量</strong>算，免得照低點砍完、尖峰時不夠用。</p>
+    </div>
+    <div class="card scroll">
+      <table>
+        <thead>
+          <tr><th>PVC</th><th>部門</th><th>申請容量</th><th>實際用量（區間最高）</th><th>使用率</th><th>金額</th><th>為空著的空間付的</th></tr>
+        </thead>
+        <tbody id="tbl-pvc"></tbody>
+      </table>
+    </div>
+    <div class="notes" id="pvc-notes"></div>
+  </section>
+
   <section id="unalloc" data-nav="無法分攤">
     <div class="sec-head">
-      <h2>五、無法分攤的成本</h2>
+      <h2>六、無法分攤的成本</h2>
     <div class="decide" style="margin-top:10px"><span class="k">你要做的決定</span>
       <b>這筆錢最後誰付？</b>沒有規則的話，答案是「平台團隊」——而且是無聲地付。
       兩個做法要一起上：前端用 admission policy 強制新工作負載一定要有部門標籤，
@@ -484,7 +505,7 @@
 
   <section id="trust" data-nav="資料可信度">
     <div class="sec-head">
-      <h2>六、資料可信度</h2>
+      <h2>七、資料可信度</h2>
       <p class="muted small">成本報表最危險的失敗方式不是壞掉，是<strong>看起來正常但少算了</strong>。這一節把「這些數字是怎麼來的」攤開。</p>
     </div>
     <div class="decide"><span class="k">你要做的決定</span>
@@ -507,7 +528,7 @@
 
   <section id="seals" data-nav="帳期封存">
     <div class="head">
-      <h2>七、帳期封存</h2>
+      <h2>八、帳期封存</h2>
       <p class="muted small">每天結帳一次並<strong>凍結</strong>。沒有這一步，「上個月的帳單」會隨著監控資料過期而查不到，甚至每次重查的金額都不一樣。</p>
     </div>
     <div class="decide"><span class="k">為什麼這是分水嶺</span>
@@ -530,7 +551,7 @@
 
   <section id="next" data-nav="下一步">
     <div class="head">
-      <h2>八、下一步該做什麼</h2>
+      <h2>九、下一步該做什麼</h2>
       <p class="muted small">下面是<strong>根據這個叢集的實際資料</strong>算出來的，不是通用建議。</p>
     </div>
     <div class="acts" id="acts"></div>
@@ -538,7 +559,7 @@
 
   <section id="rates" data-nav="計價依據">
     <div class="head">
-      <h2>九、計價依據</h2>
+      <h2>十、計價依據</h2>
       <p class="muted small">這些單價是<strong>示意值</strong>，用整數方便現場驗算。導入時換成實際的機器成本或雲端帳單即可，計算方式不變。</p>
     </div>
     <div class="decide"><span class="k">價目表</span><span id="rc-info"></span></div>
@@ -736,6 +757,77 @@ function renderWorkloads() {
     (over ? `<b>${over.name}</b> 效率超過 100%，實際用量高於申請量，反而該調高申請值。` : ""));
 }
 
+// ---- 儲存空間 ----
+function fmtBytes(b) {
+  if (b === null || b === undefined) return "—";
+  const u = ["B", "KiB", "MiB", "GiB", "TiB"];
+  let v = b, i = 0;
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+  return (i === 0 || v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2)) + " " + u[i];
+}
+function renderStorage() {
+  const S = DATA.storage || { rows: [], collector: {} };
+  const col = S.collector || {};
+  const rows = (S.rows || []).filter(r => deptFilter === "all" || r.depts.some(d => d.id === deptFilter));
+  const tb = document.getElementById("tbl-pvc"); tb.textContent = "";
+  rows.forEach(r => {
+    const tr = el("tr");
+    const c1 = el("td"); c1.append(el("span", null, r.pvc || r.pv), el("div", "small muted", r.ns || ""));
+    const c2 = el("td"); c2.style.textAlign = "left";
+    r.depts.forEach(d => {
+      if (d.label) { c2.append(el("span", "pill none", d.label)); return; }
+      const t = el("span", "dept-tag"); const sw = el("span", "swatch");
+      sw.style.background = COLOR[d.id] || "var(--unalloc)"; t.append(sw, el("span", null, dname(d.id))); c2.append(t);
+    });
+    // 沒量到跟量到 0 是兩回事：前者寫「沒有量」，後者照實寫 0
+    const c4 = el("td", "num", r.peakBytes === null ? "沒有量" : fmtBytes(r.peakBytes) + (r.partial ? "＋" : ""));
+    if (r.peakBytes === null) c4.classList.add("muted");
+    if (r.over) c4.append(el("div", "flag", "超過申請量"));
+    const c5 = el("td");
+    if (r.usedPct === null) c5.append(el("span", "muted", "—"));
+    else c5.append(effCell(r.usedPct, COLOR[(r.depts[0] || {}).id] || "var(--unalloc)"));
+    [c1, c2, el("td", "num", fmtBytes(r.capacityBytes)), c4, c5, el("td", "num", n4(r.cost)),
+      el("td", "num", r.idleCost === null ? "—" : n4(r.idleCost))].forEach(td => tr.append(td));
+    tb.append(tr);
+  });
+  if (!rows.length) {
+    const tr = el("tr"); const td = el("td", "muted", "這段區間沒有任何 PVC 被計費。");
+    td.colSpan = 7; td.style.textAlign = "left"; tr.append(td); tb.append(tr);
+  }
+
+  const notes = document.getElementById("pvc-notes"); notes.textContent = "";
+  const add = (t, d) => { const n = el("div", "note"); n.append(el("span", "t", t)); const dd = el("span", "d"); dd.innerHTML = d; n.append(dd); notes.append(n); };
+  const name = r => `<b>${esc(r.pvc || r.pv)}</b>`;
+  if (!col.installed) {
+    add("還沒有量實際用量",
+      "這個叢集的 PVC 用的是 local-path（節點上的一個目錄），Kubernetes 本身不量它的用量，所以這裡只有申請量與金額。"
+      + "要看實際用量，裝 <code>k8s/volume-usage.yaml</code>——它會把節點的儲存目錄<b>唯讀</b>掛進容器，裝之前先看檔案開頭的權限說明。"
+      + (col.error ? `<br><span class="muted small">（${esc(col.error)}）</span>` : ""));
+  } else if (S.measured < S.count) {
+    add("有些 PVC 沒有量到",
+      `${S.count} 個 PVC 裡有 ${S.count - S.measured} 個在這段區間沒有用量資料。可能是量測元件之後才裝、那段時間沒在跑，或那個節點上沒有它。`
+      + "這幾列的閒置金額是「不知道」，沒有算成 0。");
+  }
+  const vis = rows.filter(r => r.idleCost !== null);
+  const idle = vis.reduce((a, r) => a + r.idleCost, 0), paid = vis.reduce((a, r) => a + r.cost, 0);
+  if (vis.length && paid > 0) {
+    const top = [...vis].sort((a, b) => b.idleCost - a.idleCost)[0];
+    add("為空著的空間付的錢",
+      `有量到用量的 PVC 合計 <span class="num">${n4(paid)}</span>，其中 <span class="num">${n4(idle)}</span>（${pct(idle / paid)}）是為沒放東西的空間付的。`
+      + (top && top.idleCost > 0 ? `最多的是 ${name(top)}：申請 ${fmtBytes(top.capacityBytes)}、最高只用到 ${fmtBytes(top.peakBytes)}。` : ""));
+  }
+  const over = rows.filter(r => r.over);
+  if (over.length) {
+    add("用量超過申請量",
+      over.map(r => `${name(r)} 申請 ${fmtBytes(r.capacityBytes)}、實際 ${fmtBytes(r.peakBytes)}`).join("；")
+      + "。local-path 不會擋超用，OpenCost 也只照申請量收，所以這幾個<b>少收了錢</b>；而且節點磁碟滿的時候，同一台上的其他服務會一起出事。應該把申請量調到實際需要的大小。");
+  }
+  if (rows.some(r => r.partial))
+    add("用量後面有＋", "量的時候有檔案或目錄讀不到，實際用量可能比畫面上的數字高。");
+  if (col.lastScan)
+    add("量測時間", `用量每 10 分鐘量一次，最近一次在 ${fmtLocal(col.lastScan, true)}。同一段區間內新寫入的資料，最慢 10 分鐘後才會反映。`);
+}
+
 // ---- 無法分攤 ----
 function renderUnalloc() {
   const chart = document.getElementById("chart-unalloc"); chart.textContent = "";
@@ -870,7 +962,7 @@ function renderLadder() {
         ? `工作負載有部門標籤，成本找得到歸屬。目前無法分攤 ${n2(unallocPct)}%。`
         : "本期沒有任何成本資料，無從判斷標籤覆蓋。",
       done: DATA.total > 0 && unallocPct <= 20,
-      next: `把未標籤的 namespace 標上 cost-center，把這個數字壓到 20% 以下（見第八節）。` },
+      next: `把未標籤的 namespace 標上 cost-center，把這個數字壓到 20% 以下（見第九節）。` },
     { t: "三、數字可信", c: `量測覆蓋率 ${cov.pct === undefined ? "—" : cov.pct + "%"}、`
         + `對帳差異 ${rec.driftPct === null || rec.driftPct === undefined ? "—" : rec.driftPct + "%"}、`
         + `單價${rateOk ? "與系統一致" : "尚未對齊"}。`,
@@ -961,6 +1053,9 @@ const HELP = {
   "記憶體 GiB 時": "<b>GiB × 小時</b>的累計量。<br>注意是 2<sup>30</sup> 位元組，不是 10<sup>9</sup>。",
   "CPU 金額": "CPU 核時 × 單價。",
   "記憶體金額": "記憶體 GiB 時 × 單價。",
+  "申請容量": "PVC 申請的大小（PV 的容量）。<b>OpenCost 照這個數字收費</b>，不管實際放了多少。",
+  "實際用量（區間最高）": "在節點上量 PVC 目錄實際佔用的磁碟空間（跟 <code>du</code> 一樣），取這段區間內的最高點。<br>「沒有量」表示沒有資料，不是 0。",
+  "為空著的空間付的": "金額 × (1 − 最高用量 ÷ 申請容量)。<br>用最高點算：照低點砍的話，尖峰時會不夠用。",
   "儲存金額": "PVC 的 GiB 時 × 單價。沒有掛 PVC 的部門是 0。",
   "小計": "這個部門的 CPU ＋ 記憶體 ＋ 儲存。<br><b>不含閒置與無法分攤</b>——那兩塊要另外決定誰吸收。",
   "月推估": "本期金額 × (30 天 ÷ 本期長度)。<br><b>樣本很短的時候這個數字非常不可靠</b>：7 分鐘的樣本要乘 5760 倍。這種情況畫面上會把這一欄變淡並標註。",
@@ -1186,7 +1281,7 @@ function renderActions() {
 }
 
 function renderAll() {
-  renderGate(); renderLadder(); renderDept(); renderUsage(); renderEnv(); renderWorkloads();
+  renderGate(); renderLadder(); renderDept(); renderUsage(); renderEnv(); renderWorkloads(); renderStorage();
   renderUnalloc(); renderTrust(); renderMonths(); renderSeals(); renderActions(); renderRates();
   enhanceSections(); buildToc(); capAll(); applyHelp();
 }
@@ -1682,6 +1777,7 @@ function capTable(tbodyId, limit, noun) {
 
 function capAll() {
   capTable("tbl-wl", 8, "個工作負載");
+  capTable("tbl-pvc", 8, "個 PVC");
   capTable("tbl-targets", 5, "個抓取工作");
   capTable("tbl-seals", 7, "個帳期");
 }

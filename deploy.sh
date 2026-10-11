@@ -3,8 +3,9 @@
 # 用法：KCFG=<下游 kubeconfig> bash deploy.sh [--apply]
 #   IMAGE_TAG=<版本>   換一個映像檔版本（預設用 manifest 裡寫的）
 #   IMAGE=<完整名稱>   直接指定映像檔，例如自建的 registry
+#   VOLUME_USAGE=1     一起裝 local-path PVC 用量量測（會掛節點目錄，見 k8s/volume-usage.yaml）
 #   不加 --apply 只做 dry-run。改了程式碼要先 build-images.sh --push 再部署。
-case "${1:-}" in -h|--help) sed -n '2,5p' "$0"; exit 0 ;; esac
+case "${1:-}" in -h|--help) sed -n '2,6p' "$0"; exit 0 ;; esac
 set -uo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 KCFG="${KCFG:?請 export KCFG=<下游叢集 kubeconfig>}"
@@ -43,6 +44,8 @@ else
 fi
 
 MANIFEST="$HERE/k8s/cost-report.yaml"
+VU="$HERE/k8s/volume-usage.yaml"
+trap 'case "${MANIFEST}" in "$HERE"/*) ;; *) rm -f "${MANIFEST}" ;; esac; case "${VU}" in "$HERE"/*) ;; *) rm -f "${VU}" ;; esac' EXIT
 IMG="${IMAGE:-}"
 if [ -z "${IMG}" ] && [ -n "${IMAGE_TAG:-}" ]; then
   IMG=$(grep -m1 -oE 'image: [^ ]+' "$HERE/k8s/cost-report.yaml" | cut -d' ' -f2 | cut -d: -f1-2)
@@ -51,7 +54,6 @@ fi
 [ -n "${IMG}" ] && echo "映像檔：${IMG}"
 if [ -n "${SC}" ] || [ -n "${IMG}" ]; then
   MANIFEST=$(mktemp -t cost-report-k8s)
-  trap 'rm -f "${MANIFEST}"' EXIT
   SC="${SC}" IMG="${IMG}" python3 - "$HERE/k8s/cost-report.yaml" > "${MANIFEST}" <<'PYEOF'
 import os, re, sys
 src = open(sys.argv[1]).read()
@@ -75,12 +77,27 @@ k create configmap cost-report-ratecard -n "$NS" \
     --from-file="$HERE/app/ratecard.json" \
     --dry-run=client -o yaml | k apply --dry-run=$DRY -f - || exit 1
 
+# 選配：量 local-path PVC 的實際用量。預設不裝——它要把節點目錄掛進容器，
+# 這是要先想清楚才裝的權限，不該跟著報表一起被默默帶進叢集。
+if [ "${VOLUME_USAGE:-0}" = 1 ]; then
+  echo "一起部署 PVC 用量量測（hostPath 唯讀掛 /opt/local-path-provisioner）"
+  if [ -n "${IMG}" ]; then
+    VU=$(mktemp -t cost-report-vu)
+    # 跟報表用同一個映像檔：量測程式就在報表的映像檔裡
+    sed -E "s#(image: )[^ ]+#\1${IMG}#" "$HERE/k8s/volume-usage.yaml" > "${VU}"
+  fi
+  k apply --dry-run=$DRY -f "${VU}" || exit 1
+fi
+
 if [ $APPLY = 1 ]; then
   # 價目表改了也要讓 Pod 重新讀：ConfigMap 內容變動不會自己觸發滾動更新
   sum=$(shasum -a 256 "$HERE/app/ratecard.json" | cut -c1-12)
   k -n "$NS" patch deploy cost-report --type merge \
     -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"cost-report/ratecard-sha\":\"$sum\"}}}}}" >/dev/null 2>&1
   k -n "$NS" rollout status deploy/cost-report --timeout=120s
+  if [ "${VOLUME_USAGE:-0}" = 1 ]; then
+    k -n "$NS" rollout status ds/cost-report-volume-usage --timeout=120s
+  fi
   echo
   echo "存取方式："
   echo "  1. 本機轉送：kubectl --kubeconfig \$KCFG -n $NS port-forward svc/cost-report 8088:80 --address 127.0.0.1"

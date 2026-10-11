@@ -463,6 +463,23 @@ function check(ok, what, detail) {
     console.log("SKIP  取樣間隔（這個區間只有一種間隔可選）");
   }
 
+  // ── 儲存空間：申請 vs 實際 ──
+  // 最容易壞的是「沒量到」被畫成 0%：看起來像整個 PVC 都是空的，會叫人去砍。
+  const st = await page.evaluate(() => {
+    const S = DATA.storage || {};
+    const cells = [...document.querySelectorAll("#tbl-pvc tr")].map(tr => [...tr.cells].map(c => c.textContent.trim()));
+    return { rows: (S.rows || []).length, shown: cells.length, installed: !!(S.collector || {}).installed,
+             unmeasured: (S.rows || []).filter(r => r.peakBytes === null).length,
+             saysNotMeasured: cells.filter(c => c[3] === "沒有量").length,
+             zeroPctForUnmeasured: cells.filter(c => c[3] === "沒有量" && /%/.test(c[4] || "")).length,
+             notes: document.getElementById("pvc-notes").textContent };
+  });
+  check(st.rows > 0 && st.shown === Math.min(st.rows, 8), `儲存空間列出 ${st.rows} 個 PVC`, JSON.stringify(st));
+  check(st.saysNotMeasured === st.unmeasured && st.zeroPctForUnmeasured === 0,
+        "沒量到的 PVC 寫「沒有量」，使用率不顯示成 0%", JSON.stringify(st));
+  check(st.installed || st.notes.includes("還沒有量實際用量"),
+        "量測元件沒裝時，畫面講明白並指到安裝檔", st.notes.slice(0, 80));
+
   check(errors.length === 0, "沒有 JavaScript 錯誤", errors.join(" | "));
   check(warnings.length === 0, "沒有觸發收合的安全網（有的話代表版面結構壞了）", warnings.join(" | "));
 

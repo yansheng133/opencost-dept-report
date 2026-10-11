@@ -20,6 +20,7 @@ OpenCost 自己的 UI 是給平台團隊看的：它按 namespace 和工作負�
 | 各部門應分攤金額 | 用量 × 單價 = 金額，附月推估。**閒置成本可切換「獨立列帳／按比例分攤」**，兩種做法總額相同 |
 | 正式 vs 測試 | 用第二個標籤（例如 `env`）再切一次。測試環境常被當成「不用算」 |
 | 每個工作負載付了多少、用了多少 | 申請量對實際用量，標出可回收的對象；也標出「效率低但其實在工作」的例外 |
+| **儲存空間：申請 vs 實際** | 每個 PVC 申請多少、實際用多少、金額裡有多少是為空著的空間付的；也標出用量超過申請量（local-path 不擋超用）的 PVC。實際用量要另外裝量測元件，見下方「PVC 實際用量」 |
 | 無法分攤的成本 | 沒有部門標籤的部分有多大，就是標籤治理的量化指標 |
 | 計價依據 | 單價、計價單位、本期用量；單價由資料反推，不寫死在程式裡 |
 | **指定某一天** | 日期選擇器，或直接點「帳期封存」表裡的日期。可以回頭看某一天完整的報表（限 Prometheus retention 之內） |
@@ -88,9 +89,28 @@ KCFG=<kubeconfig 路徑> bash snapshotter/deploy.sh --apply # 部署快照器（
 換版本或換成自建的 registry：
 
 ```bash
-IMAGE_TAG=0.9.0 KCFG=… bash deploy.sh --apply
+IMAGE_TAG=0.10.0 KCFG=… bash deploy.sh --apply
 IMAGE=myregistry.local/cost-report:1.2.3 KCFG=… bash deploy.sh --apply
 ```
+
+### PVC 實際用量（選配）
+
+OpenCost 照 PVC **申請的容量**收費。要在報表上看到「申請 vs 實際」，得有實際用量的數字。
+用 Longhorn 或其他 CSI 儲存的叢集，kubelet 本身就會量；**local-path 不會**——它的 PV 是節點上的一個目錄（hostPath），
+kubelet 的 metrics 與 stats 裡都沒有這些 PVC，查詢不會出錯，只是回傳空的。
+
+所以另外附了一個量測元件（[`k8s/volume-usage.yaml`](k8s/volume-usage.yaml)）：每台節點一個 Pod，
+每 10 分鐘像 `du` 一樣量一次每個 PVC 目錄，給 Prometheus 抓（`cost_report_pvc_used_bytes`）。
+程式就在報表的映像檔裡，不用另外建置。
+
+```bash
+VOLUME_USAGE=1 KCFG=… bash deploy.sh --apply
+```
+
+**裝之前要想清楚的權限**：它把節點的 `/opt/local-path-provisioner` 以唯讀掛進容器，
+看得到該節點上每一個 PVC 的檔案（程式只讀大小，不讀內容）；以 root 執行但只留 `DAC_READ_SEARCH`，
+否則權限 700 的資料庫目錄會量不到而少算。Pod Security Admission 的 baseline 與 restricted 都不允許 hostPath，
+所以預設不裝。沒裝的話報表照常，儲存那一節會寫「沒有量」，不會把空的當成 0。
 
 ### 自己建置映像檔
 
@@ -130,7 +150,7 @@ REGISTRY=<你的帳號> bash build-images.sh --push
 | `SERIES_TTL` | `300` | 使用者自選取樣間隔的結果快取幾秒 |
 | `SERIES_BUDGET` | `300` | 使用者自選取樣間隔時，60 秒內最多讓 OpenCost 算幾段（理由見下方 `/api/series`） |
 | `SYSTEM_NS_PREFIXES` | `kube-system,cattle-,…` | 這些 namespace 的元件不列進工作負載表（仍計入「無法分攤」） |
-| `PROM_URL` | `http://prometheus-server.prometheus-system.svc.cluster.local:80` | 量資料完整度用。連不上只是少一塊資訊，報表照常 |
+| `PROM_URL` | `http://prometheus-server.prometheus-system.svc.cluster.local:80` | 量資料完整度、PVC 容量與實際用量用。連不上只是少一塊資訊，報表照常 |
 | `COVERAGE_JOB` | `opencost` | 用哪個 scrape job 判斷「這段有沒有量到」 |
 | `PROM_TIMEOUT` | `5` | 問 Prometheus 的逾時。刻意比主逾時短：位址設錯不該拖慢報表本身 |
 | `RATECARD_PATH` | `/config/ratecard.json` | 價目表。沒有的話單價改用反推，畫面會註明 |
@@ -165,6 +185,9 @@ REGISTRY=<你的帳號> bash build-images.sh --push
 | `app/billing.py` | 計價政策：價目表、出帳門檻、帳期封存、對帳。刻意不碰網路，所以測得動 |
 | `app/ratecard.json` | 價目表範例（版本化，含生效日與調整原因） |
 | `app/test_billing.py` | 計價政策的測試，`python3 test_billing.py`，不需要叢集 |
+| `app/storage.py`、`app/volume_usage.py` | 儲存空間「申請 vs 實際」的併表邏輯，以及在節點上量 PVC 目錄的量測程式 |
+| `app/test_storage.py` | 上面兩支的測試（稀疏檔、硬連結、讀不到的目錄、沒量到 ≠ 0），不需要叢集 |
+| `k8s/volume-usage.yaml` | 選配的 PVC 用量量測 DaemonSet，開頭寫了它需要的權限 |
 | `snapshotter/` | 宣告量快照器：只讀 API server 的第二份分攤依據，Prometheus 掛掉時還有數字可用 |
 | `build-images.sh` | 建置並推送兩個多架構映像檔（amd64／arm64） |
 | `docs/dockerhub/` | Docker Hub 的倉庫描述與更新腳本（描述只放導向，不複製 README——那會變成第三個要同步的副本） |
@@ -174,8 +197,8 @@ REGISTRY=<你的帳號> bash build-images.sh --push
 
 | | |
 |---|---|
-| 報表服務 | `docker.io/yansheng133/cost-report:0.9.0` |
-| 快照器 | `docker.io/yansheng133/cost-snapshotter:0.9.0` |
+| 報表服務 | `docker.io/yansheng133/cost-report:0.10.0` |
+| 快照器 | `docker.io/yansheng133/cost-snapshotter:0.10.0` |
 | 架構 | `linux/amd64`、`linux/arm64` |
 | 基底 | `registry.suse.com/bci/python:3.12`，非 root（UID 1000）執行 |
 

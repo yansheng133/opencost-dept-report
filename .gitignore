@@ -31,3 +31,5 @@
 !/snapshotter/*.yaml
 !/snapshotter/*.sh
 !/snapshotter/*.md
+# /app/ 整個放行，所以 Python 執行測試時產生的快取要另外擋
+__pycache__/

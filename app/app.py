@@ -34,6 +34,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import billing
 import steps
+import storage
 
 OPENCOST_URL = os.environ.get("OPENCOST_URL", "http://opencost.opencost.svc.cluster.local:9003").rstrip("/")
 CACHE_TTL = int(os.environ.get("CACHE_TTL", "60"))
@@ -330,6 +331,55 @@ def target_health(start_iso, end_iso):
     return rows
 
 
+def volume_usage(start_iso, end_iso):
+    """每個 PV 的容量、PVC 名稱，以及區間內的實際用量（結束時與最高點）。
+
+    容量與 PVC 名稱來自 kube-state-metrics；實際用量來自 volume_usage.py（另外裝的 DaemonSet）。
+    回傳 (usage, capacity, claims, status)。沒裝量測元件時 usage 是空的，
+    status["installed"] 是 False——畫面要講「沒量」，不能把空的當成「用量是 0」。
+    """
+    status = {"installed": False, "lastScan": None, "error": None}
+    if not PROM_URL:
+        status["error"] = "沒有設定 PROM_URL"
+        return {}, {}, {}, status
+    try:
+        start, end = _parse_iso(start_iso), _parse_iso(end_iso)
+    except (TypeError, ValueError):
+        return {}, {}, {}, status
+    # 區間還沒結束時（「最近 24 小時」的 end 可能在未來幾秒）用現在，否則 Prometheus 什麼都不回
+    at = min(end, time.time())
+    mins = max(1, int((at - start) // 60))
+
+    def vec(query):
+        return _prom("/api/v1/query", {"query": query, "time": at}).get("result") or []
+
+    usage, capacity, claims = {}, {}, {}
+    try:
+        for r in vec("kube_persistentvolume_capacity_bytes"):
+            capacity[r["metric"].get("persistentvolume")] = float(r["value"][1])
+        for r in vec("kube_persistentvolume_claim_ref"):
+            m = r["metric"]
+            claims[m.get("persistentvolume")] = (m.get("claim_namespace"), m.get("name"))
+        by = "pv, pvc_namespace, pvc"
+        for key, q in (("used", f"max by ({by}) (last_over_time(cost_report_pvc_used_bytes[{mins}m]))"),
+                       ("peak", f"max by ({by}) (max_over_time(cost_report_pvc_used_bytes[{mins}m]))"),
+                       ("errors", f"max by ({by}) (max_over_time(cost_report_pvc_scan_errors[{mins}m]))")):
+            for r in vec(q):
+                m = r["metric"]
+                u = usage.setdefault(m.get("pv"), {"ns": m.get("pvc_namespace"), "pvc": m.get("pvc")})
+                u[key] = float(r["value"][1])
+        # 「有沒有裝」要問現在，不是問區間結束時：查裝之前的某一天，那時當然還沒有資料
+        last = _prom("/api/v1/query", {"query": "max(cost_report_volume_scan_timestamp_seconds)"}).get("result")
+        if last:
+            status["installed"] = True
+            status["lastScan"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(float(last[0]["value"][1])))
+    except (urllib.error.URLError, OSError, RuntimeError, ValueError, KeyError, IndexError) as e:
+        status["error"] = str(e)
+    # 量測元件裝了、但這段區間它還沒在跑（例如查裝之前的某一天）：installed 是 True，usage 是空的
+    status["coveredPvs"] = len(usage)
+    return usage, capacity, claims, status
+
+
 def declared_fill(gaps, rates):
     """資料有斷層時，跟快照器要「宣告量」，把那幾段的成本補回來。
 
@@ -607,6 +657,9 @@ def build_report(window):
     gate = billing.billing_gate((cov or {}).get("pct"), estimated_pct, recon,
                                 rate_status, unalloc_pct, has_data=total > 0)
 
+    vol_usage, vol_cap, vol_claims, vol_status = volume_usage(w_start, w_end)
+    storage_report = dict(storage.build(by_cc, vol_usage, vol_cap, vol_claims), collector=vol_status)
+
     return {
         "window": {
             "query": window,
@@ -641,6 +694,7 @@ def build_report(window):
         "gate": gate,
         "ccEnv": [env_rows[k] for k in sorted(env_rows, key=lambda k: order.get(k, 99))],
         "workloads": workloads, "unallocRows": unalloc_rows,
+        "storage": storage_report,
     }
 
 

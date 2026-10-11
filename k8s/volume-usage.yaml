@@ -1,0 +1,82 @@
+# 選配：量 local-path PVC 的實際用量，讓報表能列出「申請 vs 實際」。
+#
+# 為什麼需要：local-path 的 PV 是 hostPath（節點上的一個目錄），kubelet 不量它，
+# 所以 Prometheus 裡沒有 kubelet_volume_stats_used_bytes。用 Longhorn 或其他 CSI 儲存的叢集不需要裝這個。
+#
+# 權限要講清楚，這是這個元件唯一的代價：
+#   - 它把節點的 /opt/local-path-provisioner 以**唯讀**掛進來，看得到該節點上**每一個** PVC 的檔案。
+#     程式只讀檔案的大小資訊（stat），不讀內容、不寫入，但權限上它讀得到。
+#   - 以 root 執行、但拿掉所有 capability，只留 DAC_READ_SEARCH（略過讀取權限檢查）：
+#     資料庫一類的 PVC 目錄常是 700，不這樣會量不到而無聲少算。
+#   - Pod Security Admission 的 baseline 與 restricted 都不允許 hostPath。
+#     namespace 有掛這兩種標籤的話，這個 DaemonSet 會建不起來——那是政策在做它該做的事，
+#     要嘛把它放進允許的 namespace，要嘛就不要裝。
+#
+# 部署：VOLUME_USAGE=1 KCFG=<kubeconfig> bash deploy.sh --apply
+# 移除：kubectl delete -f k8s/volume-usage.yaml（報表會改回顯示「沒有量」，不會壞）
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: cost-report-volume-usage
+  namespace: cost-report
+  labels: {app: cost-report-volume-usage}
+spec:
+  selector: {matchLabels: {app: cost-report-volume-usage}}
+  template:
+    metadata:
+      labels: {app: cost-report-volume-usage}
+      annotations:
+        # 叢集裡的 Prometheus 已經有 kubernetes-pods 這個抓取工作，看到這兩個註記就會來抓
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9102"
+    spec:
+      automountServiceAccountToken: false   # 不碰 Kubernetes API
+      tolerations:
+        - operator: Exists                  # 控制平面節點上也可能有 PVC，每一台都要量
+      securityContext:
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: collector
+          image: docker.io/yansheng133/cost-report:0.10.0   # 跟報表同一個映像檔，只是換個入口
+          imagePullPolicy: IfNotPresent
+          command: ["python3", "/app/volume_usage.py"]
+          env:
+            - name: VOLUME_ROOT
+              value: /volumes
+            - name: SCAN_INTERVAL         # 秒；du 要走過每個檔案，太頻繁會跟工作負載搶 I/O
+              value: "600"
+            - name: LISTEN_PORT
+              value: "9102"
+            - name: NODE_NAME
+              valueFrom: {fieldRef: {fieldPath: spec.nodeName}}
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          ports:
+            - {name: metrics, containerPort: 9102}
+          readinessProbe:
+            httpGet: {path: /readyz, port: metrics}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /healthz, port: metrics}
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {memory: 128Mi}
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+              add: ["DAC_READ_SEARCH"]
+          volumeMounts:
+            - {name: volumes, mountPath: /volumes, readOnly: true}
+      volumes:
+        - name: volumes
+          hostPath:
+            # local-path 的預設路徑。改過的話看 local-path-storage/local-path-config 的 nodePathMap
+            path: /opt/local-path-provisioner
+            type: Directory
