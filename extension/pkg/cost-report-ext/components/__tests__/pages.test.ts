@@ -164,6 +164,29 @@ describe('部門成本', () => {
     w.unmount();
   });
 
+  it('typing a date survives the ticking age and only Enter applies it', async() => {
+    serve({
+      [GV]: [200, {}], [`${ GV }/config`]: [200, config], [`${ GV }/reports`]: [200, report()]
+    });
+    const w = await mountPage('Report');
+    const input = w.find('input[type="date"]');
+    const el = input.element as HTMLInputElement;
+
+    await input.trigger('focus');
+    await input.trigger('keydown', { key: '2' });
+    el.value = '2026-09-23';
+    await input.trigger('input');
+    await input.trigger('change');
+    // The age in the header ticks every second; the page must not reset the field.
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    await flushPromises();
+    expect((w.find('input[type="date"]').element as HTMLInputElement).value).toBe('2026-09-23');
+    expect(mockReplace).not.toHaveBeenCalledWith({ query: { day: '2026-09-23' } });
+    await input.trigger('keydown', { key: 'Enter' });
+    expect(mockReplace).toHaveBeenCalledWith({ query: { day: '2026-09-23' } });
+    w.unmount();
+  });
+
   it('no department: a friendly empty state, no report request', async() => {
     const asked = serve({
       [GV]:               [200, {}],

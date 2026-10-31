@@ -67,7 +67,8 @@ Rancher 的角色範本見 `deploy/rancher/`。
 | `no_department` | 403 | 呼叫者沒有任何部門的權限 |
 | `not_found` | 404 | 路徑不存在、沒有這一天的封存 |
 | `series_budget` | 429 | 一分鐘內自選取樣間隔的段數超過額度；另帶 `retryAfterSeconds` |
-| `upstream` | 502 | OpenCost 沒有回傳這個區間的分段資料，或指定的那一天 OpenCost 查詢失敗 |
+| `upstream` | 502 | 指定的那一天 OpenCost 查詢失敗 |
+| `no_segments` | 502 | OpenCost 沒有回傳這個取樣間隔的分段資料（換一個間隔） |
 | `not_ready` | 503 | 還沒成功從 OpenCost 取得過資料 |
 | `unauthenticated` | 401 | 請求不是經 API server 轉來的（沒有可信的身分） |
 
@@ -122,6 +123,9 @@ OpenCost 最新的幾分鐘會晚一點才寫入，所以區間結束在現在�
 - `unallocRows[].system` 依 chart 的 `systemNamespaces` 判斷。
 - `workloads[].cpuEff`／`ramEff` 在沒有申請量時是 `null`（OpenCost 原本回 1.0，看起來像「完美」）。
 - `stale` 在報表超過三個 `ttlSeconds` 沒更新時也是 `true`。
+- `series.points[].partial`：這一段涵蓋不到取樣間隔的 90%（資料開頭、斷層後第一段、還沒結束的最後一段），平均值會偏低。
+- `coverage.gaps[].edge`：缺口碰到資料範圍的開頭或結尾；`coverage.edgeGapMinutes` 是這類缺口的分鐘數。
+- `targets[].status` 是 `ok`、`degraded`（有目標回報 down）或 `changed`（目標數量有變動，`minExpected` 是最少時的數量）。
 - `reconciliation` 多了 `allocatedMinutes`、`assetsMinutes`。兩邊涵蓋的時間差超過 1% 時，`assets` 是換算成分攤時間長度後的金額，
   `assetsMeasured` 是 OpenCost 原本的數字，`scaled` 是 `true`。資產成本 ≤ 0（OpenCost 剛啟動時會出現）或讀不到時，
   `status` 是 `unknown`，`reason` 是 `assets_not_positive` 或 `assets_unavailable`。

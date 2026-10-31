@@ -25,8 +25,10 @@ export type XY = [number, number];
 export interface Line {
   id: string;
   segments: XY[][];
-  // The unfinished last segment, joined from the previous point if any.
-  tail: { from: XY | null; to: XY } | null;
+  // Pieces drawn dashed: into and out of a partial point (a segment that
+  // covers less than the step: after a gap, at the start of the data, or
+  // the unfinished last one). `from` is null for a lone partial point.
+  dashed: { from: XY | null; to: XY }[];
   // Small dots per sample, unless they would be too dense to read.
   marks: boolean;
 }
@@ -37,6 +39,8 @@ export interface Chart {
   t1: number;
   maxY: number;
   partialIdx: number;
+  // Any point drawn dashed (one note explains them all).
+  hasPartial: boolean;
   lines: Line[];
   yTicks: { v: number; y: number }[];
   xTicks: { x: number; start: string; withDate: boolean }[];
@@ -164,7 +168,8 @@ export function buildChart(s: Series, depts: string[], metric: Metric, now = Dat
   const lines: Line[] = depts.map((id) => {
     const segments: XY[][] = [];
     let cur: XY[] = [];
-    let tail: Line['tail'] = null;
+    const dashed: Line['dashed'] = [];
+    let prev: { xy: XY; partial: boolean } | null = null;
 
     pts.forEach((p, i) => {
       const v = valueOf(p, id, metric);
@@ -174,17 +179,28 @@ export function buildChart(s: Series, depts: string[], metric: Metric, now = Dat
           segments.push(cur);
         }
         cur = [];
+        prev = null;
 
         return;
       }
       const xy: XY = [xOf(p.ts, t0, t1), yOf(v, maxY)];
+      const partial = !!p.partial || i === partialIdx;
 
-      if (i === partialIdx) {
-        tail = { from: cur.length ? cur[cur.length - 1] : null, to: xy };
-
-        return;
+      if (partial) {
+        // The solid line stops before it; a dashed piece joins it.
+        if (cur.length) {
+          segments.push(cur);
+        }
+        cur = [];
+        dashed.push({ from: prev ? prev.xy : null, to: xy });
+      } else if (prev?.partial) {
+        // Out of a partial point: dashed, then solid again from here.
+        dashed.push({ from: prev.xy, to: xy });
+        cur.push(xy);
+      } else {
+        cur.push(xy);
       }
-      cur.push(xy);
+      prev = { xy, partial };
     });
     if (cur.length) {
       segments.push(cur);
@@ -193,7 +209,7 @@ export function buildChart(s: Series, depts: string[], metric: Metric, now = Dat
     const marks = segments.some((seg) => seg.length > 1 && (seg[seg.length - 1][0] - seg[0][0]) / (seg.length - 1) >= 3);
 
     return {
-      id, segments, tail, marks
+      id, segments, dashed, marks
     };
   });
   const yTicks = [0, 1, 2, 3, 4].map((i) => ({ v: maxY * i / 4, y: yOf(maxY * i / 4, maxY) }));
@@ -207,7 +223,7 @@ export function buildChart(s: Series, depts: string[], metric: Metric, now = Dat
     .filter((l): l is { id: string; y: number } => !!l);
 
   return {
-    pts, t0, t1, maxY, partialIdx, lines, yTicks, xTicks, endLabels: spreadLabels(ends)
+    pts, t0, t1, maxY, partialIdx, hasPartial: pts.some((p, i) => p.partial || i === partialIdx), lines, yTicks, xTicks, endLabels: spreadLabels(ends)
   };
 }
 

@@ -1,7 +1,7 @@
 // Text for the codes the backend and utils/actions.ts return. The
 // translation function is passed in, so these stay pure and testable.
 import {
-  pct, pctValue, fmtBytes, fmtLocal, dayRanges, fmtCores
+  pct, pctValue, fmtBytes, fmtLocal, dayRanges, fmtCores, fmtMiB
 } from './format';
 import type {
   Gap, GateCheck, Month, FillNote, StorageRow, Workload
@@ -23,7 +23,7 @@ export interface Context {
   month: number;
 }
 
-export const gapText = (t: Translate, g: Gap) => t(`${ K }.coverage.gap`, {
+export const gapText = (t: Translate, g: Gap) => t(g.edge ? `${ K }.coverage.gapEdge` : `${ K }.coverage.gap`, {
   start: fmtLocal(g.start, true), end: fmtLocal(g.end, true), minutes: g.minutes
 });
 
@@ -99,13 +99,17 @@ export function gateVerdictText(t: Translate, gate: { verdict: string; checks: G
  * or cut at an end); `inside`: breaks within the measured part. Counting
  * only the breaks said "1 minute missing" for a day that was 8% covered.
  */
-export function missingMinutes(c: { requestedMinutes?: number | null; measuredMinutes?: number | null; gapMinutes?: number | null } | null | undefined): { edge: number; inside: number } {
+export function missingMinutes(c: { requestedMinutes?: number | null; measuredMinutes?: number | null; gapMinutes?: number | null; edgeGapMinutes?: number | null } | null | undefined): { edge: number; inside: number } {
   if (!c) {
     return { edge: 0, inside: 0 };
   }
   const edge = c.requestedMinutes !== null && c.requestedMinutes !== undefined && c.measuredMinutes !== null && c.measuredMinutes !== undefined ? Math.max(c.requestedMinutes - c.measuredMinutes, 0) : 0;
 
-  return { edge: Math.round(edge), inside: Math.round(c.gapMinutes || 0) };
+  // Gaps touching the start or end of the data are part of "no data at the
+  // start or end", not breaks inside it.
+  const edgeGaps = c.edgeGapMinutes || 0;
+
+  return { edge: Math.round(edge + edgeGaps), inside: Math.round(Math.max((c.gapMinutes || 0) - edgeGaps, 0)) };
 }
 
 /** True when the period has no cost data at all (the gate's first check blocks). */
@@ -191,15 +195,15 @@ export function workloadNoteText(t: Translate, item: Item): { title: string; tex
   };
 
   if (item.code === 'cpuIdle' || item.code === 'cpuIdleOnly') {
-    args.req = w.cpuReq;
+    args.req = fmtCores(w.cpuReq);
     args.ramEff = w.ramEff === null ? '—' : pct(w.ramEff);
   } else if (item.code === 'overNoRequest') {
     args.use = fmtCores(w.cpuUse);
   } else if (item.code === 'standby') {
     args.kind = w.kind;
   } else if (item.code === 'ramIdle') {
-    args.req = w.ramReqMi;
-    args.use = w.ramUseMi;
+    args.req = fmtMiB(w.ramReqMi);
+    args.use = fmtMiB(w.ramUseMi, w.ramEff);
   }
 
   return { title: t(`${ k }.title`), text: t(`${ k }.text`, args) };

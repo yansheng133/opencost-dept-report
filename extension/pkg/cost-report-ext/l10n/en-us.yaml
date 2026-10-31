@@ -42,6 +42,7 @@ costReport:
     unreachable: The backend cannot be reached.
     unavailable: The backend is not answering.
     invalid: The backend sent an answer the page does not understand.
+    no_segments: "OpenCost returned no segments for this interval; pick another interval."
   scope:
     all: You see every department and the cluster-wide figures.
     some: "Departments you see: {names}. Cluster-wide figures (idle, unallocated, reconciliation, monitoring targets) are not shown."
@@ -53,7 +54,7 @@ costReport:
     period: Period
     cluster: Cluster
     freshness: Data
-    fresh: "updated {age} s ago (refetched every {ttl} s)"
+    fresh: "Updated {age} s ago (refetched every minute; server data up to about {max} min old)"
     stale: "{age} s ago (OpenCost unreachable; showing the last successful data)"
     loadingDay: "Loading {day}…"
     loadFailed: Cost data could not be read
@@ -89,6 +90,7 @@ costReport:
     sep: "; "
     why: "{why}."
     more: "Details in Data quality"
+    gapEdge: "{start} → {end} ({minutes} min, at the start or end of the data)"
   gate:
     title: Can these figures be billed?
     verdict:
@@ -217,10 +219,10 @@ costReport:
     noTimes: The segments have no usable times.
     note: "One point every {step}, {count} points; times are in this computer’s time zone ({zone})."
     missing: "{count} segments have no data; the lines break there."
-    partial: The last segment is dashed; it has not ended yet and reads low.
+    partial: "Dashed segments do not cover a full interval, so they read low."
     tipFrom: "{start}, {minutes} min"
     tipNoData: No data measured in this segment
-    tipPartial: This segment has not ended; the figure will change
+    tipPartial: "This segment does not cover a full interval, so it reads low"
     tipNoValue: no data
     tipCpu: " (requested {req} cores, used {use})"
     aria: Usage per department over time
@@ -381,6 +383,7 @@ costReport:
     summaryUnknown: "Coverage unknown"
     reconNoteScaled: "Allocated {allocated} vs asset cost {measured} ({byType}). OpenCost priced the nodes over {assetsMinutes} min; scaled to the allocation's {minutes} min = {assets}. Reconcile with idle included."
     listSep: ", "
+    targetChanged: "Number of targets changed ({min}–{max})"
   actions:
     title: To do
     description: Computed from this cluster’s data for the period.

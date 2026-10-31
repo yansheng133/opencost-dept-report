@@ -99,6 +99,11 @@ pub fn build(input: &SeriesInput<'_>) -> Option<Value> {
             "start": first.get("start"),
             "end": first.get("end"),
             "minutes": round(minutes, 1),
+            // Less than 90 % of the step: the first segment after a gap or at
+            // the start of data, or the unfinished last one. Averages over a
+            // part-segment read low (a 20-minute first hour showed a third of
+            // the usage), so the page draws these dashed.
+            "partial": minutes < step_min * 0.9,
             "depts": depts,
         }));
     }
@@ -152,6 +157,7 @@ mod tests {
         assert_eq!(pts[0]["start"], "2026-09-24T00:00:00Z");
         assert!(pts[0]["depts"].is_null());
         assert_eq!(pts[1]["depts"]["rd"]["cpu"], 0.6667);
+        assert_eq!(pts[1]["partial"], false);
         assert!(pts[1]["depts"]["rd"]["ram"].is_null());
         assert!(pts[1]["depts"].get("__idle__").is_none());
         assert_eq!(pts[2]["start"], "2026-09-24T00:20:00Z");

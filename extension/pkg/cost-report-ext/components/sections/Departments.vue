@@ -119,8 +119,8 @@ export default defineComponent({
       </div>
       <Bars :rows="otherBars" />
     </template>
-    <div class="cr-table-wrap">
-      <table class="sortable-table cr-table">
+    <div class="cr-table-wrap cr-scroll-x">
+      <table class="sortable-table cr-table cr-dept-table">
         <thead>
           <tr>
             <th><Help :text="ctx.t('costReport.dept.col.dept')" /></th>

@@ -55,7 +55,24 @@ describe('buildChart', () => {
 
     expect(c.partialIdx).toBe(2);
     expect(c.lines[0].segments[0]).toHaveLength(2);
-    expect(c.lines[0].tail?.from).toStrictEqual(c.lines[0].segments[0][1]);
+    expect(c.lines[0].dashed).toHaveLength(1);
+    expect(c.lines[0].dashed[0].from).toStrictEqual(c.lines[0].segments[0][1]);
+    expect(c.hasPartial).toBe(true);
+  });
+
+  it('partial points anywhere are dashed in and out, the rest solid', () => {
+    const p1 = { ...pt(30, 0.1), partial: true };
+    const s = series([pt(0, 0.5), pt(10, 0.5), pt(20, null), p1, pt(40, 0.5), pt(50, 0.5)]);
+    const c = buildChart(s, ['rd'], 'cpu', T0 + 1e9)!;
+    const l = c.lines[0];
+
+    // Solid: 0–10 and 40–50; dashed: (lone) 30, then 30 → 40.
+    expect(l.segments.map((g) => g.length)).toStrictEqual([2, 2]);
+    expect(l.dashed).toHaveLength(2);
+    expect(l.dashed[0].from).toBeNull();
+    expect(l.dashed[1].from).toStrictEqual(l.dashed[0].to);
+    expect(c.hasPartial).toBe(true);
+    expect(buildChart(series([pt(0, 0.5), pt(10, 0.5)]), ['rd'], 'cpu', T0 + 1e9)!.hasPartial).toBe(false);
   });
 
   it('nothing to draw without timed points', () => {

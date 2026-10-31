@@ -8,7 +8,7 @@ import Help from '../Help.vue';
 import MoreRow from '../MoreRow.vue';
 import { useReportContext } from '../../composables/useReportContext';
 import { visibleParts } from '../../utils/scope';
-import { gapText, fillNoteText } from '../../utils/describe';
+import { gapText, fillNoteText, missingMinutes } from '../../utils/describe';
 import { capRows, pctValue } from '../../utils/format';
 import { TABLE_LIMITS } from '../../config/backend';
 import type { Report } from '../../utils/types';
@@ -56,7 +56,7 @@ export default defineComponent({
           item: t(`${ k }.requested`), value: t(`${ k }.requestedValue`, { measured: dash(cov.measuredMinutes), requested: dash(cov.requestedMinutes) }), note: t(`${ k }.requestedNote`)
         });
         out.push({
-          item: t(`${ k }.gaps`), value: t(`${ k }.gapsValue`, { minutes: cov.gapMinutes || 0 }), note: cov.measuredStep ? t(`${ k }.gapsNoteMeasured`, { seconds: dash(cov.stepSeconds) }) : t(`${ k }.gapsNoteGuessed`)
+          item: t(`${ k }.gaps`), value: t(`${ k }.gapsValue`, { minutes: missingMinutes(cov).inside }), note: cov.measuredStep ? t(`${ k }.gapsNoteMeasured`, { seconds: dash(cov.stepSeconds) }) : t(`${ k }.gapsNoteGuessed`)
         });
         const gaps = cov.gaps || [];
 
@@ -201,6 +201,7 @@ export default defineComponent({
               </td>
               <td>
                 <span v-if="tg.status === 'ok'">{{ ctx.t('costReport.trust.targetOk') }}</span>
+                <span v-else-if="tg.status === 'changed'">{{ ctx.t('costReport.trust.targetChanged', { min: tg.minExpected ?? '?', max: tg.expected }) }}</span>
                 <b
                   v-else
                   class="cr-warn"

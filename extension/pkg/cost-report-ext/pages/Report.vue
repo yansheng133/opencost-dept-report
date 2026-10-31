@@ -12,6 +12,7 @@ import { useText } from '../composables/useText';
 import { useBackend } from '../composables/useBackend';
 import { provideReportContext } from '../composables/useReportContext';
 import TargetBar from '../components/TargetBar.vue';
+import AgeText from '../components/AgeText.vue';
 import Help from '../components/Help.vue';
 import { foldAll, activeFilter, openSection } from '../components/CrSection.vue';
 import Gate from '../components/sections/Gate.vue';
@@ -31,7 +32,9 @@ import {
   fmtLocal, monthFactor, pctValue, share, timeZone
 } from '../utils/format';
 import { dayField, dayLocalRange, isOngoingDay, DayProblem } from '../utils/day';
-import { SPY_LINE_PX, COVERAGE_WARN_PCT, REFRESH_INTERVAL_MS, THIN_SAMPLE_FACTOR } from '../config/backend';
+import {
+  SPY_FRACTION, SPY_MIN_PX, COVERAGE_WARN_PCT, REFRESH_INTERVAL_MS, THIN_SAMPLE_FACTOR
+} from '../config/backend';
 import type { Report } from '../utils/types';
 import { fmtMoney, setMoneyBasis } from '../utils/money';
 
@@ -39,7 +42,7 @@ export default defineComponent({
   name: 'CostReportPage',
 
   components: {
-    TargetBar, Help, Gate, Departments, Usage, Environments, Workloads, StorageSection, Unallocated, Trust, Actions, Rates
+    TargetBar, AgeText, Help, Gate, Departments, Usage, Environments, Workloads, StorageSection, Unallocated, Trust, Actions, Rates
   },
 
   setup() {
@@ -92,6 +95,7 @@ export default defineComponent({
           setMoneyBasis(r.total);
           report.value = r;
           loadedView.value = asked;
+          todayUtc.value = new Date().toISOString().slice(0, 10);
           error.value = null;
           filter.value = validFilter(filter.value, r, (config.value?.departments || []).map((d) => d.id));
         }
@@ -136,19 +140,10 @@ export default defineComponent({
         }
       }, REFRESH_INTERVAL_MS);
     });
-    // The age shown ticks every second (from generatedAt), so "updated 3 s
-    // ago" does not stay 3 s for a minute.
-    const nowTick = ref(Date.now());
-    const ticker = setInterval(() => {
-      nowTick.value = Date.now();
-    }, 1000);
-
-    onBeforeUnmount(() => {
-      if (timer) {
-        clearInterval(timer);
-      }
-      clearInterval(ticker);
-    });
+    onBeforeUnmount(() => timer && clearInterval(timer));
+    // Today (UTC), for the date field's upper bound; updated on each load,
+    // not every second (the page must not re-render while someone types).
+    const todayUtc = ref(new Date().toISOString().slice(0, 10));
 
     const month = computed(() => monthFactor(report.value?.window?.minutes));
     const thin = computed(() => month.value > THIN_SAMPLE_FACTOR);
@@ -216,28 +211,44 @@ export default defineComponent({
         deptSum, unalloc, deptLabel: filter.value === 'all' ? t('costReport.totals.depts', { count: r.depts.length }) : t('costReport.totals.dept', { name: ctx.value.depts.name(filter.value) })
       };
     });
-    const freshness = computed(() => {
+    // What the header says about the data's age: a key and its arguments;
+    // AgeText adds the ticking age from generatedAt.
+    const freshness = computed<{ key: string; args: Record<string, unknown>; born: string | null; age: number } | null>(() => {
       const r = report.value;
 
       if (loading.value) {
         // Also while the previous period is still on screen: what is shown is
         // about to be replaced, and must not be read or copied as the new one.
-        return view.value.day ? t('costReport.report.loadingDay', { day: view.value.day }) : t('costReport.report.loadingWindow', { window: view.value.window || config.value?.defaultWindow || '' });
+        return view.value.day ? {
+          key: 'costReport.report.loadingDay', args: { day: view.value.day }, born: null, age: 0
+        } : {
+          key: 'costReport.report.loadingWindow', args: { window: view.value.window || config.value?.defaultWindow || '' }, born: null, age: 0
+        };
       }
       if (!r) {
-        return '';
+        return null;
       }
       const day = loadedView.value.day;
-      const born = Date.parse(r.generatedAt);
-      const age = isNaN(born) ? r.ageSeconds : Math.max(0, Math.round((nowTick.value - born) / 1000));
+      const base = { born: r.generatedAt || null, age: r.ageSeconds };
 
       if (day) {
         // Today's UTC day is still running: its figures change and the
         // page keeps refreshing it (every minute, like the live windows).
-        return isOngoingDay(day) ? t('costReport.report.today', { age }) : t('costReport.report.pastDay', { time: fmtLocal(r.generatedAt, true) });
+        return isOngoingDay(day) ? {
+          ...base, key: 'costReport.report.today', args: {}
+        } : {
+          ...base, key: 'costReport.report.pastDay', args: { time: fmtLocal(r.generatedAt, true) }
+        };
       }
+      // The page asks every minute; the server's own copy may be up to its
+      // ttl older, so the data shown can be that much older again.
+      const max = Math.ceil((REFRESH_INTERVAL_MS / 1000 + (r.ttlSeconds || 0)) / 60);
 
-      return r.stale ? t('costReport.report.stale', { age }) : t('costReport.report.fresh', { age, ttl: r.ttlSeconds });
+      return r.stale ? {
+        ...base, key: 'costReport.report.stale', args: {}
+      } : {
+        ...base, key: 'costReport.report.fresh', args: { max }
+      };
     });
     const errorText = computed(() => {
       const e = error.value;
@@ -293,8 +304,8 @@ export default defineComponent({
     });
 
     // The quick link of the section being read is highlighted: the last
-    // section whose top is above a line 40 px below the sticky bar; at the
-    // top of the page the first section, at the bottom the last. Computed
+    // section whose top is above the detection line (see spy); at the top of
+    // the page the first section, at the bottom the last. Computed
     // from positions on every scroll (any scrolling container: Rancher
     // scrolls a div, not the window) and after each reload.
     const current = ref('');
@@ -323,7 +334,12 @@ export default defineComponent({
         return;
       }
       pinned = '';
-      const line = (bar.value?.getBoundingClientRect().bottom || 0) + SPY_LINE_PX;
+      // The detection line is a third of the way down the visible area
+      // below the sticky bar: a section whose title is in the upper third
+      // is the one being read.
+      const top = bar.value?.getBoundingClientRect().bottom || 0;
+      const bottom = scroller ? Math.min(scroller.getBoundingClientRect().bottom, window.innerHeight) : window.innerHeight;
+      const line = top + Math.max(SPY_MIN_PX, (bottom - top) * SPY_FRACTION);
       const last = ids.length ? document.getElementById(ids[ids.length - 1]) : null;
       const el = scroller || (document.scrollingElement as HTMLElement | null);
 
@@ -422,8 +438,19 @@ export default defineComponent({
     // typed dates only on Enter or leaving the field). Days before the
     // earliest data or after today (UTC) are refused with a reason.
     const dayProblem = ref<DayProblem>(null);
+    // What the field shows. While it has focus it keeps what is being
+    // typed; any re-render (data refresh, a ticking clock) must not reset it
+    // to the period's day. It follows the period again on commit and blur.
+    const dayDraft = ref(view.value.day || '');
+    const dayFocused = ref(false);
+
+    watch(() => view.value.day, (d) => {
+      if (!dayFocused.value) {
+        dayDraft.value = d || '';
+      }
+    });
     const dayMin = computed(() => (config.value?.dataSince ? config.value.dataSince.slice(0, 10) : null));
-    const dayMax = computed(() => new Date(nowTick.value).toISOString().slice(0, 10));
+    const dayMax = computed(() => todayUtc.value);
     const field = dayField({
       commit: (d) => {
         if (d !== view.value.day) {
@@ -452,9 +479,26 @@ export default defineComponent({
       zoneName:   timeZone() || t('costReport.report.localTime'),
       dayMin,
       dayMax,
+      dayDraft,
       dayKey:     () => field.keydown(),
-      dayChange:  (e: Event) => field.change((e.target as HTMLInputElement).value),
+      dayFocus:   () => {
+        dayFocused.value = true;
+      },
+      dayInput:   (e: Event) => {
+        dayDraft.value = (e.target as HTMLInputElement).value;
+      },
+      dayChange:  (e: Event) => {
+        dayDraft.value = (e.target as HTMLInputElement).value;
+        field.change(dayDraft.value);
+      },
       dayCommit:  (e: Event) => field.flush((e.target as HTMLInputElement).value),
+      dayBlur:    (e: Event) => {
+        dayFocused.value = false;
+        field.flush((e.target as HTMLInputElement).value);
+        // A value that was not used goes back to the period's day (the hint
+        // says why); a used one is the new day.
+        dayDraft.value = view.value.day || '';
+      },
       report,
       error,
       errorText,
@@ -506,13 +550,23 @@ export default defineComponent({
         >
           <span>{{ t('costReport.report.period') }} <b class="cr-num">{{ periodText }}</b></span>
           <span>{{ t('costReport.report.cluster') }} <b>{{ report.cluster || '—' }}</b></span>
-          <span>{{ t('costReport.report.freshness') }} <b :class="{ 'cr-warn': report.stale && !loading }">{{ freshness }}</b></span>
+          <span v-if="freshness">{{ t('costReport.report.freshness') }} <b :class="{ 'cr-warn': report.stale && !loading }"><AgeText
+            :text-key="freshness.key"
+            :args="freshness.args"
+            :born="freshness.born"
+            :fallback-age="freshness.age"
+          /></b></span>
         </div>
         <div
           v-else-if="freshness"
           class="cr-meta"
         >
-          {{ freshness }}
+          <AgeText
+            :text-key="freshness.key"
+            :args="freshness.args"
+            :born="freshness.born"
+            :fallback-age="freshness.age"
+          />
         </div>
       </div>
       <TargetBar />
@@ -561,19 +615,21 @@ export default defineComponent({
               > {{ w }}</label>
             </div>
           </fieldset>
-          <fieldset>
+          <fieldset class="cr-day-field">
             <legend>{{ t('costReport.dept.day') }}</legend>
             <div class="cr-day">
               <input
                 type="date"
                 class="cr-date"
-                :value="view.day || ''"
+                :value="dayDraft"
                 :min="dayMin || undefined"
                 :max="dayMax"
                 @keydown.enter.prevent="dayCommit"
                 @keydown="dayKey"
+                @focus="dayFocus"
+                @input="dayInput"
                 @change="dayChange"
-                @blur="dayCommit"
+                @blur="dayBlur"
               >
               <button
                 v-if="view.day"
@@ -802,7 +858,13 @@ export default defineComponent({
         aria-busy="true"
       >
         <i class="icon icon-spinner icon-spin" />
-        {{ freshness }}
+        <AgeText
+          v-if="freshness"
+          :text-key="freshness.key"
+          :args="freshness.args"
+          :born="freshness.born"
+          :fallback-age="freshness.age"
+        />
       </div>
     </template>
   </div>

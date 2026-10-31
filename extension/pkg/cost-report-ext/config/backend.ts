@@ -16,9 +16,11 @@ export const REQUEST_TIMEOUT_MS = 60 * 1000;
 // again on the same beat while it is open.
 export const REFRESH_INTERVAL_MS = 60 * 1000;
 
-// The section being read is the last one whose top is above this line,
-// measured below the sticky bar.
-export const SPY_LINE_PX = 40;
+// The section being read is the last one whose top is above a line this
+// far down the visible area below the sticky bar (at least SPY_MIN_PX).
+export const SPY_FRACTION = 1 / 3;
+
+export const SPY_MIN_PX = 40;
 
 // Below this the coverage banner is shown (the backend's gate decides
 // what the number means for billing; this only decides when to warn).

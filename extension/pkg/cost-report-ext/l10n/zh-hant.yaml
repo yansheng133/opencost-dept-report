@@ -42,6 +42,7 @@ costReport:
     unreachable: 連不到後端。
     unavailable: 後端暫時沒有回應。
     invalid: 後端的回應格式不對。
+    no_segments: "OpenCost 沒有回傳這個取樣間隔的分段資料，請換一個間隔。"
   scope:
     all: 你看得到全部部門與全叢集的數字。
     some: "你看得到的部門：{names}。全叢集的數字（閒置、無法分攤、對帳、監控目標）不會顯示。"
@@ -53,7 +54,7 @@ costReport:
     period: 期間
     cluster: 叢集
     freshness: 資料
-    fresh: "{age} 秒前更新（每 {ttl} 秒重抓）"
+    fresh: "{age} 秒前更新（每分鐘重抓；伺服器端資料最多約 {max} 分鐘前）"
     stale: "{age} 秒前（連不到 OpenCost，顯示最後一次成功的資料）"
     loadingDay: "載入 {day}…"
     loadFailed: 讀不到成本資料
@@ -89,6 +90,7 @@ costReport:
     sep: "，"
     why: "{why}。"
     more: "細節見資料可信度"
+    gapEdge: "{start} → {end}（{minutes} 分鐘，資料範圍的開頭或結尾）"
   gate:
     title: 這份數字可以拿去出帳嗎？
     verdict:
@@ -217,10 +219,10 @@ costReport:
     noTimes: 分段資料沒有可用的時間。
     note: "每 {step}一個點，共 {count} 個點；時間是你這台電腦的時區（{zone}）。"
     missing: "有 {count} 個時段沒有資料，折線在那裡是斷開的。"
-    partial: 最後一段是虛線：那一段還沒過完，數字通常偏低。
+    partial: "虛線的段落沒有涵蓋完整的取樣間隔，數字會偏低。"
     tipFrom: "{start} 起 {minutes} 分鐘"
     tipNoData: 這個時段沒有量到資料
-    tipPartial: 這一段還沒過完，數字會再變
+    tipPartial: "這一段沒有涵蓋完整的取樣間隔，數字會偏低"
     tipNoValue: 沒有資料
     tipCpu: "（申請 {req} 核，用 {use}）"
     aria: 各部門使用率隨時間變化
@@ -381,6 +383,7 @@ costReport:
     summaryUnknown: "涵蓋率無法判斷"
     reconNoteScaled: "分攤總額 {allocated} vs 資產成本 {measured}（{byType}）。OpenCost 替節點計價只涵蓋 {assetsMinutes} 分鐘，換算成分攤的 {minutes} 分鐘＝{assets}。對帳要用含閒置的總額。"
     listSep: "、"
+    targetChanged: "目標數有變動（{min}～{max}）"
   actions:
     title: 待處理事項
     description: 依這個叢集本期的資料算出來。

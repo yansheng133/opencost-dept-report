@@ -172,10 +172,16 @@ pub fn coverage(c: &CoverageInput<'_>) -> Option<Value> {
         "measuredStep": c.measured_step,
         "stepSeconds": c.step as i64,
         "samples": { "found": seen.len(), "expected": expected },
+        // A gap touching the start or end of the data range is where data
+        // begins or stops (the first minute after OpenCost started), not a
+        // break inside it; the page counts it with the period's edges.
         "gaps": largest.iter().take(5).map(|(a, b)| json!({
             "start": iso(*a), "end": iso(*b), "minutes": round((b - a) as f64 * c.step / 60.0, 1),
+            "edge": *a == 0 || *b == expected,
         })).collect::<Vec<_>>(),
         "gapMinutes": round(gap_minutes, 1),
+        "edgeGapMinutes": round(gaps.iter().filter(|(a, b)| *a == 0 || *b == expected)
+            .map(|(a, b)| (b - a) as f64 * c.step).sum::<f64>() / 60.0, 1),
     }))
 }
 
@@ -228,12 +234,25 @@ pub fn target_health(total: &[Value], healthy: &[Value]) -> Vec<Value> {
                 .enumerate()
                 .filter(|(i, v)| h.get(*i).copied().unwrap_or(0.0) < **v)
                 .count();
+            let fewest = values.iter().cloned().fold(f64::INFINITY, f64::min);
+            // Two different things: a target reporting down (degraded), and
+            // the number of targets changing (a pod replaced, an endpoint
+            // removed). The second is not an outage; calling it "went down"
+            // next to 0 % degraded samples contradicted itself.
+            let status = if degraded > 0 {
+                "degraded"
+            } else if fewest < expected {
+                "changed"
+            } else {
+                "ok"
+            };
             json!({
                 "job": job,
                 "expected": expected as i64,
+                "minExpected": fewest as i64,
                 "worstHealthy": worst as i64,
                 "degradedPct": round(degraded as f64 / values.len() as f64 * 100.0, 2),
-                "status": if worst >= expected && degraded == 0 { "ok" } else { "degraded" },
+                "status": status,
             })
         })
         .collect()
@@ -323,7 +342,31 @@ mod tests {
         assert_eq!(c["samples"]["found"], 56);
         assert_eq!(c["gapMinutes"], 5.0);
         assert_eq!(c["gaps"][0]["start"], fmt_iso((start + 600) as f64));
+        assert_eq!(c["gaps"][0]["edge"], false);
+        assert_eq!(c["edgeGapMinutes"], 0.0);
         assert_eq!(c["windowPct"], 100.0);
+    }
+
+    #[test]
+    fn gaps_at_the_edge_are_marked() {
+        // The first minute after OpenCost started has no scrape yet.
+        let start = 1_790_208_000;
+        let mut ups = vec![true; 11];
+        ups[0] = false;
+        let series = up(start, 60, &ups);
+        let c = coverage(&CoverageInput {
+            start,
+            end: start + 600,
+            step: 60.0,
+            measured_step: true,
+            series: &series,
+            nominal: Some(10.0),
+            measured_minutes: Some(10.0),
+        })
+        .unwrap();
+        assert_eq!(c["gaps"][0]["edge"], true);
+        assert_eq!(c["edgeGapMinutes"], 1.0);
+        assert_eq!(c["gapMinutes"], 1.0);
     }
 
     #[test]
@@ -368,5 +411,13 @@ mod tests {
         assert_eq!(r[0]["degradedPct"], 33.33);
         let r = target_health(&tot, &tot);
         assert_eq!(r[0]["status"], "ok");
+        // The target count changed, nothing reported down.
+        let fewer =
+            vec![json!({"metric": {"job": "ep"}, "values": [[0, "3"], [60, "2"], [120, "3"]]})];
+        let r = target_health(&fewer, &fewer);
+        assert_eq!(
+            (r[0]["status"].as_str(), r[0]["minExpected"].as_i64()),
+            (Some("changed"), Some(2))
+        );
     }
 }

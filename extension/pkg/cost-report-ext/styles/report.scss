@@ -540,8 +540,14 @@
   text-align: center !important;
 }
 
-.cr-thin {
+// A thin sample: its extrapolated figures are faded. Only cells: a faded
+// sticky header let the rows under it show through.
+td.cr-thin {
   opacity: 0.5;
+}
+
+th.cr-thin {
+  color: var(--muted, #888);
 }
 
 .cr-eff {
@@ -807,7 +813,44 @@
   color: var(--muted, #888);
 }
 
+// The date field's hint floats under the field: showing it must not make
+// the sticky toolbar taller (the whole page jumped by a line).
+.cr-day-field {
+  position: relative;
+}
+
 .cr-day-hint {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 6;
+  margin-top: 2px;
+  padding: 2px 8px;
+  max-width: 320px;
   font-size: 12px;
+  white-space: normal;
   color: var(--warning, #c90);
+  background: var(--body-bg);
+  border: 1px solid var(--warning, #c90);
+  border-radius: var(--border-radius, 4px);
+}
+
+// The department table has many money columns (one more with shared
+// idle): headers may wrap and cells are tighter; if it is still wider than
+// its card, it scrolls sideways on its own (it is short, so it does not
+// need the sticky header).
+.cr-table-wrap.cr-scroll-x {
+  overflow-x: auto;
+}
+
+.cr-table.cr-table.cr-dept-table {
+  th,
+  td {
+    padding: 6px 6px;
+  }
+
+  th {
+    white-space: normal;
+    vertical-align: bottom;
+  }
 }

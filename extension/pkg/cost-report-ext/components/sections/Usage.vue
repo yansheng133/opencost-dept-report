@@ -13,7 +13,9 @@ import { getSeries, ApiError } from '../../utils/api';
 import {
   averages, buildChart, nearestPoint, pathOf, valueOf, wantedStep, xOf, BOX, Metric
 } from '../../utils/series';
-import { fmtLocal, pctValue, stepParts, timeZone } from '../../utils/format';
+import {
+  fmtCores, fmtLocal, pctValue, stepParts, timeZone
+} from '../../utils/format';
 import type { Report, Series } from '../../utils/types';
 
 export default defineComponent({
@@ -47,7 +49,8 @@ export default defineComponent({
     };
     const errorText = (e: unknown) => {
       if (e instanceof ApiError) {
-        return e.code === 'series_budget' ? ctx.value.t('costReport.errors.series_budget', { seconds: e.retryAfterSeconds ?? '?' }) : ctx.value.t(`costReport.errors.${ e.code }`);
+        // Without its final period: it goes inside a sentence that has one.
+        return (e.code === 'series_budget' ? ctx.value.t('costReport.errors.series_budget', { seconds: e.retryAfterSeconds ?? '?' }) : ctx.value.t(`costReport.errors.${ e.code }`)).replace(/[。.]\s*$/, '');
       }
 
       return String(e);
@@ -137,7 +140,7 @@ export default defineComponent({
         x,
         left:    `${ Math.min(Math.max(x / BOX.W * 100, 12), 88) }%`,
         p,
-        partial: hover.value === c.partialIdx,
+        partial: !!p.partial || hover.value === c.partialIdx,
         rows:    ids.value.map((id) => {
           const v = valueOf(p, id, metric.value);
           const raw = p.depts?.[id];
@@ -169,7 +172,7 @@ export default defineComponent({
     });
 
     return {
-      summary, pctValue, ctx, metric, series, busy, pending, failure, chart, missing, tip, hover, move, load, stepText, pathOf, fmtLocal, BOX, zone: timeZone()
+      summary, pctValue, fmtCores, ctx, metric, series, busy, pending, failure, chart, missing, tip, hover, move, load, stepText, pathOf, fmtLocal, BOX, zone: timeZone()
     };
   },
 });
@@ -307,16 +310,19 @@ export default defineComponent({
               />
             </template>
           </template>
-          <template v-if="l.tail">
+          <template
+            v-for="(d, k) in l.dashed"
+            :key="`d${ k }`"
+          >
             <path
-              v-if="l.tail.from"
-              :d="pathOf([l.tail.from, l.tail.to])"
+              v-if="d.from"
+              :d="pathOf([d.from, d.to])"
               :stroke="ctx.depts.color(l.id)"
               class="cr-path cr-partial"
             />
             <circle
-              :cx="l.tail.to[0]"
-              :cy="l.tail.to[1]"
+              :cx="d.to[0]"
+              :cy="d.to[1]"
               r="2.4"
               :stroke="ctx.depts.color(l.id)"
               class="cr-partial-dot"
@@ -384,7 +390,7 @@ export default defineComponent({
           <span
             v-if="metric === 'cpu' && r.raw && r.raw.cpuReq"
             class="text-muted cr-small"
-          >{{ ctx.t('costReport.usage.tipCpu', { req: r.raw.cpuReq, use: r.raw.cpuUse }) }}</span>
+          >{{ ctx.t('costReport.usage.tipCpu', { req: fmtCores(r.raw.cpuReq), use: fmtCores(r.raw.cpuUse, r.raw.cpu) }) }}</span>
         </div>
       </div>
       <!-- The lines are named at their ends; a legend only when there are none. -->
@@ -423,7 +429,7 @@ export default defineComponent({
         class="cr-gap-l"
       >{{ ctx.t('costReport.usage.missing', { count: missing }) }}</span>
       <span
-        v-if="chart.partialIdx >= 0"
+        v-if="chart.hasPartial"
         class="cr-gap-l"
       >{{ ctx.t('costReport.usage.partial') }}</span>
     </p>

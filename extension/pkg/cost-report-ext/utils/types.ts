@@ -32,7 +32,9 @@ export interface BackendConfig {
 
 export type Status = 'ok' | 'mark' | 'block' | 'unknown';
 
-export interface Gap { start: string; end: string; minutes: number }
+// edge: the gap touches the start or end of the data range (counted with
+// the part of the period without data, not as a break inside it).
+export interface Gap { start: string; end: string; minutes: number; edge?: boolean }
 
 export interface Coverage {
   available: boolean;
@@ -46,6 +48,8 @@ export interface Coverage {
   stepSeconds?: number;
   gaps?: Gap[];
   gapMinutes?: number;
+  // Minutes of gaps at the start or end of the data range.
+  edgeGapMinutes?: number;
 }
 
 export interface TargetRow {
@@ -53,7 +57,10 @@ export interface TargetRow {
   expected: number;
   worstHealthy: number;
   degradedPct: number;
-  status: 'ok' | 'degraded';
+  // degraded: a target reported down; changed: the number of targets
+  // changed (between minExpected and expected), nothing went down.
+  status: 'ok' | 'degraded' | 'changed';
+  minExpected?: number;
 }
 
 export interface SeriesDept {
@@ -67,6 +74,9 @@ export interface SeriesPoint {
   start: string;
   end?: string;
   minutes?: number;
+  // The segment covers less than 90 % of the step (after a gap, at the
+  // start of the data, or the unfinished last one): drawn dashed.
+  partial?: boolean;
   // null: no data in this segment (the line breaks there).
   depts: Record<string, SeriesDept> | null;
 }

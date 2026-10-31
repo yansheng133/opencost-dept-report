@@ -854,8 +854,8 @@ impl App {
         let Some(data) = self.usage_series(&window, Some(&step)) else {
             return Response::api_error(
                 502,
-                "upstream",
-                "OpenCost returned no segments for this window",
+                "no_segments",
+                "OpenCost returned no segments for this step; try another step",
                 json!({}),
             );
         };
