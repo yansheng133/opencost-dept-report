@@ -34,7 +34,7 @@ costReport:
     no_department: You have no access to any department.
     not_found: Not found.
     series_budget: "OpenCost has just run large queries; try again in {seconds} seconds. Back-to-back large queries leave it unable to reach Prometheus, and the billing report fails too."
-    upstream: OpenCost returned no segments for this period.
+    upstream: OpenCost failed to answer for this period (it may be busy); try again in a minute.
     not_ready: The backend has not received data from OpenCost yet.
     unauthenticated: The request did not come through the Kubernetes API server, so the backend cannot tell who you are.
     forbidden: You do not have access to this data.

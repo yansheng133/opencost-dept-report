@@ -75,6 +75,10 @@ pub struct App {
     ready: AtomicBool,
     authz: Authz,
     metrics: Metrics,
+    /// Pause between sealed days. Each day is five allocation queries plus a
+    /// series; run back to back at startup they exhausted OpenCost's
+    /// connections to Prometheus and the user's own query failed with them.
+    pub(crate) seal_pause: Duration,
 }
 
 fn up_err(e: UpstreamError) -> String {
@@ -105,6 +109,7 @@ impl App {
             ready: AtomicBool::new(false),
             authz,
             metrics: Metrics::default(),
+            seal_pause: Duration::from_secs(20),
         }
     }
 
@@ -421,7 +426,9 @@ impl App {
             if day >= today || seals::read_seal(&dir, &day).is_some() {
                 continue;
             }
-            let data = match self.build_report(&day_window(&day)) {
+            let built = self.build_report(&day_window(&day));
+            std::thread::sleep(self.seal_pause);
+            let data = match built {
                 Ok(d) => d,
                 Err(e) => {
                     self.metrics.seals_failed.fetch_add(1, Ordering::Relaxed);
@@ -453,6 +460,9 @@ impl App {
     }
 
     pub fn sealer(self: &Arc<Self>, stop: Arc<AtomicBool>) {
+        // Let the first refresh of every window go first: sealing a week of
+        // days is the heaviest load this process puts on OpenCost.
+        sleep_unless(&stop, 120);
         while !stop.load(Ordering::Relaxed) {
             if self.cfg.seals_enabled {
                 self.seal_completed_days();
@@ -665,7 +675,13 @@ impl App {
                     let msg = e
                         .error
                         .unwrap_or_else(|| "no data from OpenCost yet".into());
-                    return Response::api_error(503, "not_ready", &msg, json!({}));
+                    // A configured window that never loaded is "not ready yet";
+                    // a day built on demand that failed is OpenCost failing now.
+                    return if self.cfg.windows.contains(&window) {
+                        Response::api_error(503, "not_ready", &msg, json!({}))
+                    } else {
+                        Response::api_error(502, "upstream", &msg, json!({}))
+                    };
                 }
                 e
             }

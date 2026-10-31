@@ -112,6 +112,10 @@ fn upstream() -> (String, Seen) {
         let ok = |data: Value| (200, json!({"code": 200, "data": data}).to_string());
         match path {
             "/allocation/compute" => {
+                // A day OpenCost fails on (it answers 500 when overloaded).
+                if q(target, "window").is_some_and(|w| w.starts_with("2001-01-01")) {
+                    return (500, "{}".into());
+                }
                 let agg = q(target, "aggregate").unwrap_or_default();
                 if q(target, "accumulate").as_deref() == Some("false") {
                     return ok(json!([{"rd": row(1.0), "mfg": row(0.5)}, {}, {"rd": row(1.0)}]));
@@ -175,7 +179,9 @@ fn app(base: &str, seal_dir: &std::path::Path) -> App {
         "/nonexistent/ratecard.json".into(),
     )
     .unwrap();
-    App::new(cfg, Authz::new(Box::new(Fake)))
+    let mut a = App::new(cfg, Authz::new(Box::new(Fake)));
+    a.seal_pause = Duration::ZERO;
+    a
 }
 
 fn get(app: &App, path: &str, user: Option<&str>) -> (u16, Value) {
@@ -252,6 +258,9 @@ fn report_end_to_end_and_scoped() {
     assert_eq!((s, e["error"]["code"].as_str()), (400, Some("bad_window")));
     let (s, e) = get(&a, "reports?day=2026-13-01", Some("finance"));
     assert_eq!((s, e["error"]["code"].as_str()), (400, Some("bad_window")));
+    // A day built on demand that OpenCost fails is an upstream error, not "not ready".
+    let (s, e) = get(&a, "reports?day=2001-01-01", Some("finance"));
+    assert_eq!((s, e["error"]["code"].as_str()), (502, Some("upstream")));
     let (s, e) = get(&a, "nothing", Some("finance"));
     assert_eq!((s, e["kind"].as_str()), (404, Some("Status")));
     let (s, d) = get(&a, "", Some("finance"));

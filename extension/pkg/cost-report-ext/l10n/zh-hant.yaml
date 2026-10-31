@@ -34,7 +34,7 @@ costReport:
     no_department: 你沒有任何部門的權限。
     not_found: 找不到這份資料。
     series_budget: "OpenCost 剛跑完大的查詢，請 {seconds} 秒後再試。連續的大查詢會讓它連不上 Prometheus，連帳務報表都會查不到。"
-    upstream: OpenCost 沒有回傳這個區間的分段資料。
+    upstream: OpenCost 這次沒有回傳這段期間的資料（可能正忙），請過一分鐘再試。
     not_ready: 後端還沒成功從 OpenCost 取得過資料。
     unauthenticated: 請求沒有經過 Kubernetes API server，後端無法確認你的身分。
     forbidden: 你沒有這項資料的權限。

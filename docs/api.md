@@ -67,7 +67,7 @@ Rancher 的角色範本見 `deploy/rancher/`。
 | `no_department` | 403 | 呼叫者沒有任何部門的權限 |
 | `not_found` | 404 | 路徑不存在、沒有這一天的封存 |
 | `series_budget` | 429 | 一分鐘內自選取樣間隔的段數超過額度；另帶 `retryAfterSeconds` |
-| `upstream` | 502 | OpenCost 沒有回傳這個區間的分段資料 |
+| `upstream` | 502 | OpenCost 沒有回傳這個區間的分段資料，或指定的那一天 OpenCost 查詢失敗 |
 | `not_ready` | 503 | 還沒成功從 OpenCost 取得過資料 |
 | `unauthenticated` | 401 | 請求不是經 API server 轉來的（沒有可信的身分） |
 
