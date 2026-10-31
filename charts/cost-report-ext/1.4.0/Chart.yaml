@@ -1,0 +1,26 @@
+annotations:
+  catalog.cattle.io/certified: community
+  catalog.cattle.io/namespace: cattle-ui-plugin-system
+  catalog.cattle.io/os: linux
+  catalog.cattle.io/permits-os: linux, windows
+  catalog.cattle.io/scope: management
+  catalog.cattle.io/ui-component: plugins
+  catalog.cattle.io/rancher-version: '>= 2.15.0-0 < 2.16.0-0'
+  catalog.cattle.io/ui-extensions-version: '>= 3.0.0 < 4.0.0'
+  catalog.cattle.io/display-name: Cost allocation
+apiVersion: v2
+appVersion: 1.4.0
+description: >-
+  Department cost allocation from OpenCost, with billing checks, usage trends
+  and sealed billing periods
+name: cost-report-ext
+type: application
+keywords:
+  - opencost
+  - finops
+  - chargeback
+  - cost-allocation
+version: 1.4.0
+icon: >-
+  https://raw.githubusercontent.com/yansheng133/opencost-dept-report/v1.4.0/extension/pkg/cost-report-ext/assets/icon.svg
+home: https://github.com/yansheng133/opencost-dept-report
