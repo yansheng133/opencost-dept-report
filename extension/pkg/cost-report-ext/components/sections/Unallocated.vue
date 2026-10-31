@@ -30,7 +30,9 @@ export default defineComponent({
     const ctx = useReportContext();
     const bars = computed<BarRow[]>(() => {
       const { t } = ctx.value;
-      const whole = props.report.unallocated?.separate || 0;
+      // Shares of the period's total, as everywhere else on the page (not of
+      // the unallocated amount: two different 100% on one page misled).
+      const whole = props.report.total || 0;
 
       const all = props.report.unallocRows || [];
       const top: BarRow[] = all.slice(0, TOP).map((r) => ({
@@ -82,5 +84,8 @@ export default defineComponent({
       {{ ctx.t('costReport.unalloc.basisSeparate', { shared: fmtMoney(report.unallocated ? report.unallocated.shared : 0), separate: fmtMoney(report.unallocated ? report.unallocated.separate : 0) }) }}
     </p>
     <Bars :rows="bars" />
+    <p class="cr-footnote">
+      {{ ctx.t('costReport.unalloc.pctNote') }}
+    </p>
   </CrSection>
 </template>

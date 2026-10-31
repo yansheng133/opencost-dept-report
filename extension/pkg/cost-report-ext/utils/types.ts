@@ -26,6 +26,8 @@ export interface BackendConfig {
   currency?: string | null;
   // Earliest data the backend has seen (ISO), or null.
   dataSince?: string | null;
+  // Newest minutes left out of live periods (OpenCost has not written them yet).
+  ingestLagMinutes?: number | null;
 }
 
 export type Status = 'ok' | 'mark' | 'block' | 'unknown';
@@ -107,8 +109,9 @@ export interface Workload {
   cpuUse: number;
   ramReqMi: number;
   ramUseMi: number;
-  cpuEff: number;
-  ramEff: number;
+  // null: nothing requested, so there is no ratio (OpenCost reports 1.0).
+  cpuEff: number | null;
+  ramEff: number | null;
 }
 
 // special: not a department (OpenCost's __unallocated__, __unmounted__, __idle__).

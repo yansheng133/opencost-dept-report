@@ -80,6 +80,7 @@ The backend's settings file.
   "prometheusUrl" $c.prometheusUrl
   "snapshotterUrl" $snap
   "coverageJob" $c.coverageJob
+  "ingestLagMinutes" $c.ingestLagMinutes
   "labels" $c.labels
   "departments" $c.departments
   "systemNamespaces" $c.systemNamespaces

@@ -45,51 +45,74 @@ export function completeDay(v: string): string | null {
   return y >= 2000 && y <= 2999 && !isNaN(t) && new Date(t).toISOString().slice(0, 10) === v ? v : null;
 }
 
+/** Why a typed date was not used; null when it can be used. */
+export type DayProblem = 'invalid' | 'before' | 'after' | null;
+
+/** Is `v` a complete date within [min, max] (both optional, YYYY-MM-DD)? */
+export function checkDay(v: string, min?: string | null, max?: string | null): DayProblem {
+  if (!completeDay(v)) {
+    return 'invalid';
+  }
+  if (min && v < min) {
+    return 'before';
+  }
+  if (max && v > max) {
+    return 'after';
+  }
+
+  return null;
+}
+
 /**
- * The date field changes the period only on Enter, on leaving the field,
- * or after the value has stayed unchanged for `delay` ms. Other parts of
- * the date are prefilled, so typing one digit already makes a complete
- * date (2026-10-0 → 2026-10-03); it must not be queried while typing.
- * An incomplete value cancels anything pending.
+ * The date field. A choice in the picker (a change without a key pressed
+ * just before) applies at once; after typing, only Enter or leaving the
+ * field applies it. The other parts of the date are prefilled, so each
+ * typed digit is already a complete date (2026-10-3 → 2026-10-03), and no
+ * pause long enough to be safe exists. A value that cannot be used is
+ * reported (onProblem) instead of being dropped silently.
  */
-export function settleDay(delay: number, commit: (day: string) => void, timers: {
-  set: (fn: () => void, ms: number) => unknown;
-  clear: (h: unknown) => void;
-} = { set: (fn, ms) => setTimeout(fn, ms), clear: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) }) {
-  let handle: unknown = null;
+export function dayField(opts: {
+  commit: (day: string) => void;
+  onProblem: (p: DayProblem) => void;
+  range?: () => { min?: string | null; max?: string | null };
+  keyWindowMs?: number;
+  now?: () => number;
+}) {
+  const now = opts.now || (() => Date.now());
+  const keyWindow = opts.keyWindowMs ?? 1000;
+  let lastKey = -Infinity;
   let last = '';
 
-  const cancel = () => {
-    if (handle !== null) {
-      timers.clear(handle);
-      handle = null;
+  function apply(v: string) {
+    const r = opts.range?.() || {};
+    const p = checkDay(v, r.min, r.max);
+
+    opts.onProblem(v ? p : null);
+    if (!p) {
+      opts.commit(v);
     }
-  };
+  }
 
   return {
-    /** A new value while typing. */
-    type(v: string) {
-      cancel();
+    /** A key was pressed in the field (not Enter). */
+    keydown() {
+      lastKey = now();
+    },
+    /** The field's value changed. */
+    change(v: string) {
       last = v;
-      const d = completeDay(v);
-
-      if (d) {
-        handle = timers.set(() => {
-          handle = null;
-          commit(d);
-        }, delay);
+      if (now() - lastKey > keyWindow) {
+        apply(v);
+      } else {
+        opts.onProblem(null);
       }
     },
-    /** Enter or leaving the field: now, if complete. */
+    /** Enter, or leaving the field. */
     flush(v = last) {
-      cancel();
-      const d = completeDay(v);
-
-      if (d) {
-        commit(d);
+      if (v) {
+        apply(v);
       }
     },
-    cancel,
   };
 }
 

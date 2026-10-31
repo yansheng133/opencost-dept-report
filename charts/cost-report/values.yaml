@@ -25,6 +25,9 @@ config:
   prometheusUrl: ""
   # Scrape job of OpenCost in that Prometheus (coverage is its `up` series).
   coverageJob: opencost
+  # OpenCost writes its newest minutes a few minutes late. Windows end this
+  # many minutes before now so those minutes do not read as unmeasured.
+  ingestLagMinutes: 5
   labels:
     # Pod or namespace label naming the department (the pod's label wins).
     department: cost-center

@@ -16,6 +16,7 @@ costReport:
     untagged: Untagged
     noData: No data
     inCurrency: "{label} ({currency})"
+    roundingNote: "Each column is rounded on its own; totals may differ by one unit in the last place."
   target:
     cluster: Cluster
     searching: Looking for clusters with the cost allocation backend…
@@ -74,10 +75,11 @@ costReport:
     localTime: "local time"
     windowPeriod: "Last {window}: {from} → {to}"
     dataFrom: " (data from {time})"
+    ingestLag: " (excluding the last {minutes} min, not yet written by OpenCost)"
   coverage:
     unknownTitle: Completeness cannot be checked
     unknown: "Prometheus is unreachable ({reason}). The amounts below may miss periods that were not measured, and how much cannot be told."
-    lowTitle: "Measurement coverage this period: {pct}%"
+    lowTitle: "Measurement coverage this period: {pct}"
     low: "Costs were still incurred then, so the amounts below are undercounted, not absent. Decide how to fill gaps and mark them on the bill before billing."
     guessedStep: The scrape interval could not be read; 60 s was assumed, so coverage is approximate.
     gaps: "Gaps: {gaps}"
@@ -94,9 +96,9 @@ costReport:
       mark: Bill with a note
       block: Needs approval
     verdictText:
-      ok: Every check passed; these figures can be charged to departments as they are.
-      mark: Can be billed, but the bill must state the estimated share and how it was estimated.
-      block: Not ready to bill as is. The bill still goes out, but someone must approve it and take responsibility for the failed checks, so that it is on record.
+      ok: "Every check passed; these figures can be billed as they are."
+      mark: "Can be billed, with the items below stated on the bill."
+      block: "Not ready to bill as is. The bill still goes out, but someone must approve it and take responsibility for the failed checks."
     status:
       ok: Passed
       mark: Note
@@ -141,6 +143,11 @@ costReport:
       unknown: "{count} unknown"
       sep: ", "
       allOk: "All checks passed"
+    because:
+      block: "Needs approval: {list}."
+      mark: "State on the bill: {list}."
+      unknown: "Cannot be judged: {list}."
+      ok: ""
   resource:
     cpu: CPU
     ram: Memory
@@ -191,6 +198,10 @@ costReport:
     otherScale: "The rest of the cluster, on a different scale from the departments above"
     formulaShared: " + shared idle"
     summary: "{count, plural, =1 {1 department} other {# departments}}: {amount} {currency}"
+    dayProblem:
+      invalid: "That is not a complete date."
+      before: "The earliest data is on {min}; pick that day or later."
+      after: "Days after today ({max}, UTC) cannot be chosen."
   usage:
     title: Usage trend per department
     description: Usage = actual use ÷ requests. Cost tells what was paid; usage tells whether what was requested is used.
@@ -257,12 +268,16 @@ costReport:
       standby:
         title: "Low usage is not always waste"
         text: "{name} ({kind}) runs at only {eff} CPU efficiency. Databases, replicas and per-node agents often idle by design; check whether it is standby capacity before lowering its request."
+      overNoRequest:
+        title: "Used without a request"
+        text: "{name} has no CPU request but uses {use} cores. The scheduler reserved nothing for it; set a request."
     summary: "{count, plural, =1 {1 workload} other {# workloads}}"
     overRequest: "Uses more than requested: the scheduler reserved only the request, so the excess is a capacity risk, not efficiency"
     summaryTop: "{count, plural, =1 {1 workload} other {# workloads}}; highest {name} {amount} {currency}"
+    noRequest: "No request"
   storage:
     title: "Storage: requested vs used"
-    description: Cost is requested capacity × hours mounted × rate, whatever is stored. Idle cost uses the period’s peak usage.
+    description: "Cost is requested capacity × hours mounted × rate, whatever is stored. “Paid for empty space” uses the period’s peak usage."
     col:
       pvc: PVC
       dept: Department
@@ -304,13 +319,14 @@ costReport:
   unalloc:
     title: Unallocated cost
     description: "Anything without the {label} label cannot be allocated. Platform components are usually shared by a separate rule; application namespaces should be labelled."
-    bar: "{ns}: {amount}, {pct} of unallocated"
+    bar: "{ns}: {amount}, {pct} of the total"
     system: platform
     rest: "{count, plural, =1 {1 other namespace} other {# other namespaces}}"
     restTip: "Includes: {list}"
     summary: "{amount}, {pct} of the total"
     summarySeparate: "{amount}, {pct} of the total (idle separate)"
     basisSeparate: "This section uses idle kept separate: namespace amounts exclude shared idle. The Unallocated card above shows {shared} with idle shared; the total here is {separate}."
+    pctNote: "Percentages are of the period's total, as elsewhere on the page."
   trust:
     title: Data quality
     description: Where these figures come from and how complete they are.
@@ -331,7 +347,7 @@ costReport:
     gapsNoteGuessed: Scrape interval unknown; 60 s assumed
     estimated: Estimated share
     estimatedFill: "{amount} filled from declared requests (snapshotter)"
-    estimatedFillCoverage: " (snapshots {pct}% complete)"
+    estimatedFillCoverage: " (snapshots {pct} complete)"
     estimatedNone: Nothing estimated this period; all measured
     gapList: Gaps
     gapListValue: "{count}"
@@ -376,7 +392,7 @@ costReport:
       text: "These application namespaces have no department: {list}. Labels do not apply retroactively; the sooner, the more history. Use an admission policy so new workloads carry the label."
     platformRule:
       title: Agree a rule for shared platform cost
-      text: "Platform components ({list}) cost {total}, {pct}% of the period. They should not be labelled with a department, nor stay unallocated. Share them by department usage or fund them as a platform budget."
+      text: "Platform components ({list}) cost {total}, {pct} of the period. They should not be labelled with a department, nor stay unallocated. Share them by department usage or fund them as a platform budget."
       more: ", …"
     rightsize:
       title: Review workloads that request far more than they use
@@ -385,7 +401,7 @@ costReport:
       tiny: under 0.001
     idle:
       title: Deal with idle capacity
-      text: "Idle is {pct}% ({idle}, {month} a month), currently {who}. Decide who carries it before resizing nodes."
+      text: "Idle is {pct} ({idle}, {month} a month), currently {who}. Decide who carries it before resizing nodes."
       whoShared: shared by departments
       whoSeparate: absorbed by the platform team
     gate:
@@ -435,9 +451,9 @@ costReport:
     monthsEmpty: "No sealed periods yet."
     sealedDays: "{sealed}/{expected} days sealed"
     notOver: " (of {days}; month not over)"
-    minCoverage: "lowest daily coverage {pct}%"
+    minCoverage: "lowest daily coverage {pct}"
     gapMinutes: "gaps total {minutes} min"
-    estimated: "{pct}% estimated"
+    estimated: "{pct} estimated"
     missing: "Days without a seal: {ranges}"
     range: "{from} ~ {to} ({days} days)"
     verdict:
@@ -465,7 +481,8 @@ costReport:
     unreadable: seal file unreadable
     scoped: Amounts are the totals of your departments on that day.
     firstSealRule: "The first seal is made within an hour after the first full UTC day of data ends (after {time} the next day, local time), then one a day; monthly totals add those seals up."
-    firstSealAt: "From the earliest data, the first seal is expected within an hour after {time} ({zone}), then one a day; monthly totals add those seals up."
+    firstSealAt: "The first full UTC day, {day}, is sealed within an hour after {time} ({zone}), then one a day; monthly totals add those seals up."
+    partialDay: "{day} has only part of a day of data and is not sealed. "
   help:
     cpuHours: Cores × hours accumulated; 1 core for 2 hours is 2 core-hours. The basis of billing, not instant use.
     ramHours: GiB × hours accumulated. 1 GiB is 2^30 bytes.
@@ -503,6 +520,7 @@ costReport:
     deptTotal: With a department filter, only that department; without idle and unallocated.
 
     sharedIdle: "The idle cost spread to this department in proportion. CPU, memory and storage plus this column add up to the subtotal."
+    storageAmount: "Requested capacity × hours mounted × rate, whatever is actually stored."
   empty:
     titleDay: "No cost data for {day}"
     title: "No cost data for {period}"
@@ -510,3 +528,4 @@ costReport:
     before: "The period is before OpenCost started collecting (just installed, or a day before the install)."
     outage: "OpenCost or the Prometheus it reads was down during the period."
     labels: "If the cluster was running, check that OpenCost is computing costs and that workloads carry the {label} label."
+    dataSince: "Earliest data: {time} ({zone})"

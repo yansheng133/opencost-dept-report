@@ -16,6 +16,7 @@ costReport:
     untagged: 未標籤
     noData: 沒有資料
     inCurrency: "{label}（{currency}）"
+    roundingNote: "各欄分別四捨五入，加總可能差一個最小單位。"
   target:
     cluster: 叢集
     searching: 正在尋找有安裝成本分攤後端的叢集…
@@ -74,10 +75,11 @@ costReport:
     localTime: "本機時間"
     windowPeriod: "最近 {window}：{from} → {to}"
     dataFrom: "（資料從 {time} 起）"
+    ingestLag: "（不含最近 {minutes} 分鐘，OpenCost 尚未寫入）"
   coverage:
     unknownTitle: 無法確認資料完整度
     unknown: "連不上 Prometheus（{reason}）。下面的金額可能少算了沒量到的時段，但目前無法判斷少了多少。"
-    lowTitle: "本期量測覆蓋率 {pct}%"
+    lowTitle: "本期量測覆蓋率 {pct}"
     low: "這段期間成本照樣發生，所以下面的金額是少算，不是沒發生。出帳前要先決定缺漏怎麼補，並在帳單上標示。"
     guessedStep: 抓取間隔問不到，用 60 秒估算，覆蓋率僅供參考。
     gaps: "缺漏區段：{gaps}"
@@ -94,9 +96,9 @@ costReport:
       mark: 可出帳，需標示
       block: 需核准才放行
     verdictText:
-      ok: 每一項檢查都通過，這份數字可以直接拿去跟部門收費。
-      mark: 可以出帳，但帳單上必須寫明推估的比例與方法。
-      block: 不建議直接出帳。帳單還是要發，但要有人核准並為沒過的項目負責，責任歸屬才留得下紀錄。
+      ok: "每一項檢查都通過，這份數字可以直接拿去跟部門收費。"
+      mark: "可以出帳，但帳單上要註明下列項目。"
+      block: "不建議直接出帳。帳單還是要發，但要有人核准並為沒過的項目負責。"
     status:
       ok: 通過
       mark: 需標示
@@ -141,6 +143,11 @@ costReport:
       unknown: "{count} 項無法判斷"
       sep: "、"
       allOk: "全部通過"
+    because:
+      block: "要核准的項目：{list}。"
+      mark: "帳單上要註明：{list}。"
+      unknown: "無法判斷：{list}。"
+      ok: ""
   resource:
     cpu: CPU
     ram: 記憶體
@@ -191,6 +198,10 @@ costReport:
     otherScale: "以下是整個叢集的其他部分，比例尺與上面各部門不同"
     formulaShared: " ＋ 分攤到的閒置"
     summary: "{count} 個部門合計 {amount} {currency}"
+    dayProblem:
+      invalid: "這不是完整的日期。"
+      before: "最早的資料在 {min}，請選這一天或之後。"
+      after: "不能選未來的日子（今天是 {max}，UTC）。"
   usage:
     title: 各部門的使用率趨勢
     description: 使用率 = 實際用量 ÷ 申請量。金額看付了多少，使用率看申請的有沒有在用。
@@ -257,12 +268,16 @@ costReport:
       standby:
         title: "低使用率不等於該砍"
         text: "{name}（{kind}）CPU 效率只有 {eff}。資料庫、備援副本、每個節點都要有的元件，平常用量本來就低；先確認它是不是待命用的，再決定要不要調低申請值。"
+      overNoRequest:
+        title: "沒有申請量卻在用"
+        text: "{name} 沒有設定 CPU 申請量，卻用了 {use} 核。排程時沒有替它保留任何容量，應該設定申請值。"
     summary: "{count} 個工作負載"
     overRequest: "實際用量超過申請量：排程時只保留了申請量，用多的部分是容量風險，不是效率好"
     summaryTop: "{count} 個工作負載，最高是 {name} {amount} {currency}"
+    noRequest: "沒有申請量"
   storage:
     title: 儲存空間：申請了多少、用了多少
-    description: 金額照申請容量 × 掛載時數 × 單價計算，跟實際放了多少無關。閒置金額用區間內的最高用量計算。
+    description: "金額照申請容量 × 掛載時數 × 單價計算，跟實際放了多少無關。「為空著的空間付的」用區間內的最高用量計算。"
     col:
       pvc: PVC
       dept: 部門
@@ -304,13 +319,14 @@ costReport:
   unalloc:
     title: 無法分攤的成本
     description: "沒有 {label} 標籤的東西無法歸屬到部門。系統元件通常以平台共用成本另行分攤，應用的 namespace 則應該補上標籤。"
-    bar: "{ns}：{amount}，佔無法分攤的 {pct}"
+    bar: "{ns}：{amount}，佔總成本 {pct}"
     system: 系統元件
     rest: "其他 {count} 個 namespace"
     restTip: "包含：{list}"
     summary: "{amount}，佔總成本 {pct}"
     summarySeparate: "{amount}，佔總成本 {pct}（獨立列帳）"
     basisSeparate: "這一節以獨立列帳計算：各 namespace 的金額不含分攤到的閒置。上方「無法分攤」卡片按比例分攤時是 {shared}，這裡的合計是 {separate}。"
+    pctNote: "百分比是佔期間總成本，跟頁面其他地方一致。"
   trust:
     title: 資料可信度
     description: 這些數字是怎麼來的、完不完整。
@@ -331,7 +347,7 @@ costReport:
     gapsNoteGuessed: 抓取間隔問不到，用 60 秒估算
     estimated: 推估佔比
     estimatedFill: "用宣告量補了 {amount}，來源是快照器"
-    estimatedFillCoverage: "（快照本身完整度 {pct}%）"
+    estimatedFillCoverage: "（快照本身完整度 {pct}）"
     estimatedNone: 本期沒有使用推估，全部是實際量測
     gapList: 缺漏區段
     gapListValue: "{count} 段"
@@ -376,7 +392,7 @@ costReport:
       text: "這些是應用的 namespace，卻沒有部門歸屬：{list}。標籤不會回溯，越早標，可用的歷史資料越多；搭配 admission policy 要求新工作負載帶標籤。"
     platformRule:
       title: 替平台共用成本訂一條分攤規則
-      text: "系統元件（{list}）本期 {total}，佔 {pct}%。它們不該標成某個部門，但也不能一直留在無法分攤裡。常見做法是按各部門用量比例攤回，或編成平台的固定預算。"
+      text: "系統元件（{list}）本期 {total}，佔 {pct}。它們不該標成某個部門，但也不能一直留在無法分攤裡。常見做法是按各部門用量比例攤回，或編成平台的固定預算。"
       more: " 等"
     rightsize:
       title: 檢視申請量遠高於用量的工作負載
@@ -385,7 +401,7 @@ costReport:
       tiny: 不到 0.001
     idle:
       title: 處理閒置產能
-      text: "閒置佔 {pct}%（{idle}，月推估 {month}），目前{who}。先決定由誰負擔，再決定要不要縮減節點。"
+      text: "閒置佔 {pct}（{idle}，月推估 {month}），目前{who}。先決定由誰負擔，再決定要不要縮減節點。"
       whoShared: 由各部門分攤
       whoSeparate: 由平台團隊吸收
     gate:
@@ -435,9 +451,9 @@ costReport:
     monthsEmpty: "還沒有封存的帳期。"
     sealedDays: "已封存 {sealed}/{expected} 天"
     notOver: "（整月 {days} 天，尚未過完）"
-    minCoverage: "最低單日覆蓋率 {pct}%"
+    minCoverage: "最低單日覆蓋率 {pct}"
     gapMinutes: "量測缺漏合計 {minutes} 分鐘"
-    estimated: "推估佔 {pct}%"
+    estimated: "推估佔 {pct}"
     missing: "沒有封存的日子：{ranges}"
     range: "{from} ~ {to}（{days} 天）"
     verdict:
@@ -465,7 +481,8 @@ costReport:
     unreadable: 封存檔讀不出來
     scoped: 金額是你看得到的部門在那一天的合計。
     firstSealRule: "第一筆封存在資料涵蓋的第一個完整 UTC 日結束後一小時內產生（本機時間隔天 {time} 後），之後每天一筆；月報由這些封存彙總。"
-    firstSealAt: "依目前最早的資料，第一筆封存預計在 {time}（{zone}）後一小時內產生，之後每天一筆；月報由這些封存彙總。"
+    firstSealAt: "第一個完整的 UTC 日 {day} 會在 {time}（{zone}）後一小時內封存，之後每天一筆；月報由這些封存彙總。"
+    partialDay: "{day} 只有部分資料，不封存；"
   help:
     cpuHours: 核心 × 小時的累計量，1 核跑 2 小時 = 2 核時。這是計價的基礎，不是瞬間用量。
     ramHours: GiB × 小時的累計量。1 GiB 是 2 的 30 次方位元組。
@@ -503,6 +520,7 @@ costReport:
     deptTotal: 有篩選部門時只算那一個部門，不含閒置與無法分攤。
 
     sharedIdle: "按比例分攤到這個部門的閒置成本。CPU、記憶體、儲存加上這一欄，等於小計。"
+    storageAmount: "申請容量 × 掛載時數 × 單價，跟實際放了多少無關。"
   empty:
     titleDay: "{day} 沒有成本資料"
     title: "{period} 沒有成本資料"
@@ -510,3 +528,4 @@ costReport:
     before: "這段期間早於 OpenCost 開始收資料的時間（例如剛安裝，或選了安裝前的日子）。"
     outage: "OpenCost 或它讀的 Prometheus 在這段期間停止運作。"
     labels: "如果叢集有在運作，確認 OpenCost 是否在算成本，以及工作負載是否帶有 {label} 標籤。"
+    dataSince: "最早的資料：{time}（{zone}）"

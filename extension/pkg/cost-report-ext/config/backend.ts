@@ -16,10 +16,6 @@ export const REQUEST_TIMEOUT_MS = 60 * 1000;
 // again on the same beat while it is open.
 export const REFRESH_INTERVAL_MS = 60 * 1000;
 
-// A typed date must stay unchanged this long before it changes the period
-// (Enter or leaving the field change it at once).
-export const DAY_SETTLE_MS = 1200;
-
 // The section being read is the last one whose top is above this line,
 // measured below the sticky bar.
 export const SPY_LINE_PX = 40;

@@ -75,7 +75,7 @@ export default defineComponent({
             <th>
               <Help
                 :text="ctx.t('costReport.common.inCurrency', { label: ctx.t('costReport.storage.col.amount'), currency: ctx.currency })"
-                :tip="ctx.t('costReport.help.amount')"
+                :tip="ctx.t('costReport.help.storageAmount')"
               />
             </th>
             <th>

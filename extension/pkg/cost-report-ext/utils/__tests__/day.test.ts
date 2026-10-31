@@ -1,6 +1,6 @@
-import { describe, it, expect, jest } from '@jest/globals';
+import { describe, it, expect } from '@jest/globals';
 import {
-  completeDay, dayLocalRange, firstSealAfter, isOngoingDay, settleDay, utcMidnightLocal
+  completeDay, dayLocalRange, checkDay, dayField, firstSealAfter, isOngoingDay, utcMidnightLocal
 } from '../day';
 
 describe('UTC days', () => {
@@ -30,36 +30,44 @@ describe('UTC days', () => {
   });
 });
 
-describe('settleDay', () => {
-  it('queries only after the value stays, or on Enter/blur, never for partial dates', () => {
-    jest.useFakeTimers();
+describe('dayField', () => {
+  it('applies picker choices at once, typed dates only on Enter or blur', () => {
+    let clock = 10_000;
     const done: string[] = [];
-    const s = settleDay(1200, (d) => done.push(d));
+    const problems: unknown[] = [];
+    const f = dayField({
+      commit:    (d) => done.push(d),
+      onProblem: (p) => problems.push(p),
+      range:     () => ({ min: '2026-10-31', max: '2026-11-05' }),
+      now:       () => clock,
+    });
 
-    // Typing the day digit by digit: each value is "complete".
-    s.type('2026-10-03');
-    jest.advanceTimersByTime(500);
-    s.type('2026-10-30');
-    jest.advanceTimersByTime(1199);
-    expect(done).toStrictEqual([]);
-    jest.advanceTimersByTime(1);
-    expect(done).toStrictEqual(['2026-10-30']);
-
-    // An incomplete value cancels the pending one.
-    s.type('2026-11-05');
-    s.type('0002-11-05');
-    jest.advanceTimersByTime(5000);
-    expect(done).toStrictEqual(['2026-10-30']);
-
-    // Enter or blur: at once, with the last value.
-    s.type('2026-11-07');
-    s.flush();
-    expect(done).toStrictEqual(['2026-10-30', '2026-11-07']);
-    jest.advanceTimersByTime(5000);
+    // Picker: no key pressed before the change.
+    f.change('2026-11-01');
+    expect(done).toStrictEqual(['2026-11-01']);
+    // Typing 2026 → 11 → 0 → 3, pausing as long as you like: nothing yet.
+    for (const v of ['2026-11-01', '2026-11-00', '2026-11-03']) {
+      f.keydown();
+      clock += 10;
+      f.change(v);
+      clock += 3000;
+    }
+    expect(done).toStrictEqual(['2026-11-01']);
+    // Enter (or blur) applies the last value.
+    f.flush();
+    expect(done).toStrictEqual(['2026-11-01', '2026-11-03']);
+    // Out of range or invalid: a reason, no query.
+    f.flush('2026-10-30');
+    f.flush('2026-11-09');
+    f.flush('0002-11-03');
     expect(done).toHaveLength(2);
-    s.flush('');
-    expect(done).toHaveLength(2);
-    jest.useRealTimers();
+    expect(problems.slice(-3)).toStrictEqual(['before', 'after', 'invalid']);
+  });
+
+  it('checks the range', () => {
+    expect(checkDay('2026-11-01', '2026-10-31', '2026-11-05')).toBeNull();
+    expect(checkDay('2026-11-01')).toBeNull();
+    expect(checkDay('2026-02-30')).toBe('invalid');
   });
 });
 

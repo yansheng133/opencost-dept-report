@@ -67,7 +67,7 @@ export default defineComponent({
       out.push({
         item:  t(`${ k }.estimated`),
         value: pctValue(b.estimatedPct || 0),
-        note:  f ? t(`${ k }.estimatedFill`, { amount: fmtMoney(b.estimatedTotal) }) + (f.snapshotCoveragePct !== null && f.snapshotCoveragePct !== undefined ? t(`${ k }.estimatedFillCoverage`, { pct: f.snapshotCoveragePct }) : '') : t(`${ k }.estimatedNone`),
+        note:  f ? t(`${ k }.estimatedFill`, { amount: fmtMoney(b.estimatedTotal) }) + (f.snapshotCoveragePct !== null && f.snapshotCoveragePct !== undefined ? t(`${ k }.estimatedFillCoverage`, { pct: pctValue(f.snapshotCoveragePct) }) : '') : t(`${ k }.estimatedNone`),
       });
       if (parts.value.reconciliation) {
         const r = props.report.reconciliation!;
@@ -107,7 +107,7 @@ export default defineComponent({
     });
 
     return {
-      ctx, parts, rows, targets, shownTargets, open, summary, limit: TABLE_LIMITS.targets
+      ctx, parts, rows, targets, shownTargets, open, summary, pctValue, limit: TABLE_LIMITS.targets
     };
   },
 });
@@ -197,7 +197,7 @@ export default defineComponent({
                 {{ tg.worstHealthy }}
               </td>
               <td class="cr-num">
-                {{ tg.degradedPct }}%
+                {{ pctValue(tg.degradedPct) }}
               </td>
               <td>
                 <span v-if="tg.status === 'ok'">{{ ctx.t('costReport.trust.targetOk') }}</span>

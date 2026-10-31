@@ -297,8 +297,10 @@ pub fn assemble(
             "cpuUse": round(field(v, "cpuCoreUsageAverage"), 3),
             "ramReqMi": (field(v, "ramByteRequestAverage") / MIB).round(),
             "ramUseMi": (field(v, "ramByteUsageAverage") / MIB).round(),
-            "cpuEff": round(field(v, "cpuEfficiency"), 3),
-            "ramEff": round(field(v, "ramEfficiency"), 3),
+            // No request, no efficiency: OpenCost reports 1.0 there, which
+            // reads as "perfect" for a workload using capacity it never asked for.
+            "cpuEff": (field(v, "cpuCoreRequestAverage") > 0.0).then(|| round(field(v, "cpuEfficiency"), 3)),
+            "ramEff": (field(v, "ramByteRequestAverage") > 0.0).then(|| round(field(v, "ramEfficiency"), 3)),
         }));
     }
     workloads.sort_by(|x, y| {
@@ -550,6 +552,14 @@ pub(crate) mod tests {
         assert_eq!(r["ccEnv"][1]["envs"]["prod"], 20.0);
         assert_eq!(r["ccEnv"][1]["other"], 2.0);
         // The batch job is not a long-running controller; coredns is a system component.
+        // tool has no requests: no efficiency figure.
+        let tool = r["workloads"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|w| w["name"] == "tool")
+            .unwrap();
+        assert!(tool["cpuEff"].is_null() && tool["ramEff"].is_null());
         let names: Vec<&str> = r["workloads"]
             .as_array()
             .unwrap()

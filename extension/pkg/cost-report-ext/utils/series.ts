@@ -141,7 +141,7 @@ export function spreadLabels(labels: { id: string; y: number }[], minGap = 18): 
   return arr.map((l) => ({ ...l, y: Math.max(l.y, top) }));
 }
 
-export function buildChart(s: Series, depts: string[], metric: Metric, now = Date.now()): Chart | null {
+export function buildChart(s: Series, depts: string[], metric: Metric, now = Date.now(), tickEvery?: number): Chart | null {
   const pts = timedPoints(s);
 
   if (!pts.length) {
@@ -197,15 +197,7 @@ export function buildChart(s: Series, depts: string[], metric: Metric, now = Dat
     };
   });
   const yTicks = [0, 1, 2, 3, 4].map((i) => ({ v: maxY * i / 4, y: yOf(maxY * i / 4, maxY) }));
-  // At most five time labels; the date is added when the whole span is
-  // over a day (not when one step is: 7 days at 1 h would show only times).
-  const every = Math.max(1, Math.ceil(pts.length / 5));
-  const xTicks = pts
-    .map((p, i) => ({ p, i }))
-    .filter(({ i }) => !(i % every) || i === pts.length - 1)
-    .map(({ p }) => ({
-      x: xOf(p.ts, t0, t1), start: p.start, withDate: t1 - t0 > 864e5
-    }));
+  const xTicks = timeTicks(t0, t1, tickEvery);
   const ends = lines
     .map((l) => {
       const seg = l.segments[l.segments.length - 1];
@@ -217,6 +209,36 @@ export function buildChart(s: Series, depts: string[], metric: Metric, now = Dat
   return {
     pts, t0, t1, maxY, partialIdx, lines, yTicks, xTicks, endLabels: spreadLabels(ends)
   };
+}
+
+const MIN = 60 * 1000;
+const HOUR = 60 * MIN;
+const DAY = 24 * HOUR;
+
+/** Tick spacing for a span: 1 h → 10 min, about a day → 3 h, longer → 1 day. */
+export function tickInterval(span: number): number {
+  return span <= 2 * HOUR ? 10 * MIN : span <= 30 * HOUR ? 3 * HOUR : DAY;
+}
+
+/**
+ * Time labels on round local times (10:00, 13:00…, or each midnight for
+ * a week), never an extra one for "now" or the end of the period: an
+ * irregular last label read as one more interval.
+ */
+export function timeTicks(t0: number, t1: number, every?: number): { x: number; start: string; withDate: boolean }[] {
+  const step = every || tickInterval(t1 - t0);
+  const off = (t: number) => -new Date(t).getTimezoneOffset() * MIN;
+  const out: { x: number; start: string; withDate: boolean }[] = [];
+  let t = Math.ceil((t0 + off(t0)) / step) * step - off(t0);
+
+  for (let guard = 0; t <= t1 && guard < 400; guard++) {
+    out.push({
+      x: xOf(t, t0, t1), start: new Date(t).toISOString(), withDate: step >= DAY || t1 - t0 > DAY
+    });
+    t += step;
+  }
+
+  return out;
 }
 
 /** The point nearest to an x position (SVG units), for the hover tip. */

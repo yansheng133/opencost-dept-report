@@ -84,8 +84,13 @@ export function filterEnv(rows: EnvRow[], f: DeptFilter): EnvRow[] {
 }
 
 /** The filter, unless the department is no longer in the report. */
-export function validFilter(f: DeptFilter, r: Report): DeptFilter {
-  return f === 'all' || r.depts.some((d) => d.id === f) ? f : 'all';
+/**
+ * Keep the department filter while that department still exists: in this
+ * report, or among the configured departments (an empty day has no rows,
+ * and moving through it must not drop the filter).
+ */
+export function validFilter(f: DeptFilter, r: Report, known: string[] = []): DeptFilter {
+  return f === 'all' || r.depts.some((d) => d.id === f) || known.includes(f) ? f : 'all';
 }
 
 /** Department amounts of a month, largest first, inside the scope. */

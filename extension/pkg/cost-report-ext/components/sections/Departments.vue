@@ -11,7 +11,7 @@ import { useReportContext } from '../../composables/useReportContext';
 import { visibleParts, IDLE_COLOR, UNALLOCATED_COLOR } from '../../utils/scope';
 import { n4, share } from '../../utils/format';
 import type { Report } from '../../utils/types';
-import { fmtMoney } from '../../utils/money';
+import { fmtMoney, fmtMonthly } from '../../utils/money';
 
 export default defineComponent({
   name: 'CostReportDepartments',
@@ -55,7 +55,7 @@ export default defineComponent({
         value: r.amount,
         note:  share(r.amount, total),
         tip:   t('costReport.dept.bar', {
-          name: depts.name(r.id), amount: fmtMoney(r.amount), month: fmtMoney(r.amount * props.month)
+          name: depts.name(r.id), amount: fmtMoney(r.amount), month: fmtMonthly(r.amount * props.month)
         }),
       }));
     });
@@ -90,6 +90,7 @@ export default defineComponent({
       bars,
       otherBars,
       fmtMoney,
+      fmtMonthly,
       n4,
       rate,
       summary: computed(() => ctx.value.t('costReport.dept.summary', {
@@ -213,7 +214,7 @@ export default defineComponent({
               class="cr-num"
               :class="{ 'cr-thin': thin }"
             >
-              {{ fmtMoney(r.amount * month) }}
+              {{ fmtMonthly(r.amount * month) }}
             </td>
           </tr>
         </tbody>
@@ -234,12 +235,15 @@ export default defineComponent({
               class="cr-num"
               :class="{ 'cr-thin': thin }"
             >
-              {{ fmtMoney(sum * month) }}
+              {{ fmtMonthly(sum * month) }}
             </td>
           </tr>
         </tfoot>
       </table>
     </div>
+    <p class="cr-footnote">
+      {{ ctx.t('costReport.common.roundingNote') }}
+    </p>
     <p class="cr-formula">
       <span class="text-muted">{{ ctx.t('costReport.dept.formula') }}</span>
       <span class="cr-num">{{ ctx.t('costReport.dept.formulaText', { cpu: rate(report.rates.cpu), ram: rate(report.rates.ram), storage: rate(report.rates.storage) }) }}{{ idleShared ? ctx.t('costReport.dept.formulaShared') : '' }}</span>

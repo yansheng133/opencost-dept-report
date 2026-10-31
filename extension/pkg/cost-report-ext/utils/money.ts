@@ -46,3 +46,12 @@ export function setMoneyBasis(total: unknown) {
 export function fmtMoney(v: unknown): string {
   return moneyFixed(v, moneyDigits.value);
 }
+
+/**
+ * A monthly estimate: an extrapolation, so two decimals at most (none
+ * from 1000), whatever the page precision; four decimals on a guess read
+ * as false accuracy.
+ */
+export function fmtMonthly(v: unknown): string {
+  return moneyFixed(v, Math.abs(Number(v ?? 0)) >= 1000 ? 0 : 2);
+}

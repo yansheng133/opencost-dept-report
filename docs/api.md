@@ -88,7 +88,8 @@ Rancher 的角色範本見 `deploy/rancher/`。
   "labels": { "department": "cost-center", "environment": "env", "environments": ["prod", "dev"] },
   "features": { "seals": true, "volumeUsage": true, "snapshotter": true, "coverage": true },
   "currency": "TWD",
-  "dataSince": "2026-10-31T01:20:00Z"
+  "dataSince": "2026-10-31T01:20:00Z",
+  "ingestLagMinutes": 5
 }
 ```
 
@@ -97,7 +98,7 @@ Rancher 的角色範本見 `deploy/rancher/`。
 ### `GET reports?window=24h` 或 `GET reports?day=2026-09-24`（list）
 
 `window=24h` 是「到現在為止的最近 24 小時」：後端換算成絕對區間再問 OpenCost（OpenCost 自己的相對區間會對齊整點、包含還沒發生的時間）。
-指定的日子還沒結束時，只算到現在；還沒開始的日子回 400 `bad_window`。實際查詢的區間在 `window.requested`（`start`、`end`）。
+OpenCost 最新的幾分鐘會晚一點才寫入，所以區間結束在現在往前 `ingestLagMinutes`（預設 5）分鐘。指定的日子還沒結束時，只算到那個時間點，而且報表超過 `ttlSeconds` 就重算；還沒開始的日子回 400 `bad_window`。實際查詢的區間在 `window.requested`（`start`、`end`）。
 
 主報表。欄位跟舊版 `/api/report` 相同（見 `demo` 分支的 `app/app.py` `build_report`），差別：
 
@@ -119,6 +120,8 @@ Rancher 的角色範本見 `deploy/rancher/`。
 - `storage.rows[].depts[]` 是 `{ "id", "cost", "special" }`，`special` 是 `null`、`unallocated`、`unmounted` 或 `idle`（取代舊版的中文標籤）。
 - `ccEnv[]` 的環境欄位改成 `{ "dept": "rd", "envs": { "prod": 1.2, "dev": 0.4 }, "other": 0.1 }`，環境值由 `labels.environments` 決定，不再寫死 prod／dev。
 - `unallocRows[].system` 依 chart 的 `systemNamespaces` 判斷。
+- `workloads[].cpuEff`／`ramEff` 在沒有申請量時是 `null`（OpenCost 原本回 1.0，看起來像「完美」）。
+- `stale` 在報表超過三個 `ttlSeconds` 沒更新時也是 `true`。
 - `reconciliation` 多了 `allocatedMinutes`、`assetsMinutes`。兩邊涵蓋的時間差超過 1% 時，`assets` 是換算成分攤時間長度後的金額，
   `assetsMeasured` 是 OpenCost 原本的數字，`scaled` 是 `true`。資產成本 ≤ 0（OpenCost 剛啟動時會出現）或讀不到時，
   `status` 是 `unknown`，`reason` 是 `assets_not_positive` 或 `assets_unavailable`。

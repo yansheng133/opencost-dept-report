@@ -42,7 +42,7 @@ export function nextActions(r: Report, idleShared: boolean): Item[] {
     });
   }
   const waste = mergedWorkloads(r.workloads || [])
-    .filter((w) => w.cpuReq > 0 && w.cpuEff < 0.2)
+    .filter((w) => w.cpuReq > 0 && w.cpuEff !== null && w.cpuEff < 0.2)
     .sort((a, b) => b.total - a.total)
     .slice(0, MAX_LISTED);
 
@@ -80,23 +80,26 @@ export function nextActions(r: Report, idleShared: boolean): Item[] {
  * requests are weighted by cost.
  */
 export function mergedWorkloads(list: Workload[]): Workload[] {
-  const m = new Map<string, Workload & { cpuW: number; effW: number }>();
+  const m = new Map<string, Workload & { cpuW: number; effW: number; hasEff: boolean }>();
 
   list.forEach((w) => {
     const k = `${ w.ns }/${ w.name }`;
     const cur = m.get(k) || {
-      ...w, total: 0, cpuW: 0, effW: 0
+      ...w, total: 0, cpuW: 0, effW: 0, hasEff: false
     };
 
     cur.total += w.total || 0;
     cur.cpuW += (w.cpuReq || 0) * (w.total || 0);
-    cur.effW += (w.cpuEff || 0) * (w.total || 0);
+    cur.effW += (w.cpuEff ?? 0) * (w.total || 0);
+    cur.hasEff = cur.hasEff || w.cpuEff !== null;
     m.set(k, cur);
   });
 
-  return [...m.values()].map(({ cpuW, effW, ...w }) => ({
+  return [...m.values()].map(({
+    cpuW, effW, hasEff, ...w
+  }) => ({
     ...w,
-    cpuEff: w.total ? effW / w.total : 0,
+    cpuEff: !hasEff ? null : w.total ? effW / w.total : 0,
     cpuReq: w.total ? cpuW / w.total : 0,
   }));
 }
@@ -105,14 +108,17 @@ export function mergedWorkloads(list: Workload[]): Workload[] {
 export function workloadNotes(list: Workload[]): Item[] {
   const out: Item[] = [];
   const top = <T>(xs: T[], by: (x: T) => number) => [...xs].sort((a, b) => by(b) - by(a))[0];
-  const cpuWaste = top(list.filter((w) => w.cpuReq > 0 && w.cpuEff < 0.1), (w) => w.total);
-  const ramWaste = top(list.filter((w) => w.ramReqMi >= 128 && w.ramEff < 0.2), (w) => w.ramReqMi);
-  const over = top(list.filter((w) => w.cpuEff > 1), (w) => w.cpuEff);
+  const low = (e: number | null, below: number) => e !== null && e < below;
+  const cpuWaste = top(list.filter((w) => w.cpuReq > 0 && low(w.cpuEff, 0.1)), (w) => w.total);
+  const ramWaste = top(list.filter((w) => w.ramReqMi >= 128 && low(w.ramEff, 0.2)), (w) => w.ramReqMi);
+  // Using more than requested: above 100%, or using without any request
+  // (no ratio; the most serious case, ranked first).
+  const over = top(list.filter((w) => (w.cpuEff === null ? w.cpuUse > 0 : w.cpuEff > 1)), (w) => (w.cpuEff === null ? Infinity : w.cpuEff));
 
   if (cpuWaste) {
     // "Nearly all of the amount pays for reserved capacity" holds only when
     // memory is barely used too; otherwise only the CPU part is idle.
-    out.push({ code: cpuWaste.ramEff < 0.2 ? 'cpuIdle' : 'cpuIdleOnly', args: { ...cpuWaste } });
+    out.push({ code: low(cpuWaste.ramEff, 0.2) ? 'cpuIdle' : 'cpuIdleOnly', args: { ...cpuWaste } });
   }
   if (ramWaste) {
     out.push({ code: 'ramIdle', args: { ...ramWaste } });
@@ -121,7 +127,7 @@ export function workloadNotes(list: Workload[]): Item[] {
   // with low usage is often standby capacity (a database, a replica, a
   // node agent). The example must have LOW usage; with none, no note.
   const standby = top(
-    list.filter((w) => w !== cpuWaste && (w.kind === 'statefulset' || w.kind === 'daemonset') && w.cpuReq > 0 && w.cpuEff < 0.2),
+    list.filter((w) => w !== cpuWaste && (w.kind === 'statefulset' || w.kind === 'daemonset') && w.cpuReq > 0 && low(w.cpuEff, 0.2)),
     (w) => w.total
   );
 
@@ -129,7 +135,7 @@ export function workloadNotes(list: Workload[]): Item[] {
     out.push({ code: 'standby', args: { ...standby } });
   }
   if (over) {
-    out.push({ code: 'over', args: { ...over } });
+    out.push({ code: over.cpuEff === null ? 'overNoRequest' : 'over', args: { ...over } });
   }
 
   return out;

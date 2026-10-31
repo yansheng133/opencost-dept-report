@@ -1,13 +1,13 @@
 // Text for the codes the backend and utils/actions.ts return. The
 // translation function is passed in, so these stay pure and testable.
 import {
-  n2, pct, fmtBytes, fmtLocal, dayRanges
+  pct, pctValue, fmtBytes, fmtLocal, dayRanges, fmtCores
 } from './format';
 import type {
   Gap, GateCheck, Month, FillNote, StorageRow, Workload
 } from './types';
 import type { Item } from './actions';
-import { fmtMoney } from './money';
+import { fmtMoney, fmtMonthly } from './money';
 
 export type Translate = (key: string, args?: Record<string, unknown>) => string;
 
@@ -61,6 +61,36 @@ export function gateCheckText(t: Translate, c: GateCheck, th: Record<string, num
     policy: t(`${ k }.policy`, limits[c.code] || {}),
     detail,
   };
+}
+
+/**
+ * The gate's explanation, built from the checks that did not pass ("可以
+ * 出帳，但帳單上要註明：量測覆蓋率 95.00%、無法分攤佔比 87.27%"), not a
+ * fixed sentence that may talk about estimates when none are involved.
+ */
+export function gateVerdictText(t: Translate, gate: { verdict: string; checks: GateCheck[]; thresholds?: Record<string, number> }): string {
+  const item = (c: GateCheck) => {
+    const name = gateCheckText(t, c, gate.thresholds || {}).name;
+
+    return c.value === null || c.value === undefined || c.status === 'unknown' ? name : `${ name } ${ c.unit === '%' ? pctValue(c.value) : c.value }`;
+  };
+  const list = (status: string) => gate.checks.filter((c) => c.status === status).map(item).join(t(`${ K }.gate.summary.sep`));
+  const parts: string[] = [];
+  const block = list('block');
+  const mark = list('mark');
+  const unknown = list('unknown');
+
+  if (block) {
+    parts.push(t(`${ K }.gate.because.block`, { list: block }));
+  }
+  if (mark) {
+    parts.push(t(`${ K }.gate.because.mark`, { list: mark }));
+  }
+  if (unknown) {
+    parts.push(t(`${ K }.gate.because.unknown`, { list: unknown }));
+  }
+
+  return parts.length ? parts.join(' ') : t(`${ K }.gate.because.ok`);
 }
 
 /**
@@ -118,7 +148,7 @@ export function actionText(c: Context, item: Item): { title: string; text: strin
     return {
       title: t(`${ k }.title`),
       text:  t(`${ k }.text`, {
-        list: a.namespaces.join(', ') + (a.more ? t(`${ k }.more`) : ''), total: fmtMoney(a.total), pct: n2(a.pct)
+        list: a.namespaces.join(', ') + (a.more ? t(`${ k }.more`) : ''), total: fmtMoney(a.total), pct: pctValue(a.pct)
       }),
     };
   case 'rightsize':
@@ -127,11 +157,11 @@ export function actionText(c: Context, item: Item): { title: string; text: strin
       text:  t(`${ k }.text`, {
         list: a.workloads.map((w: Workload) => t(`${ k }.item`, {
           name:   `${ w.ns }/${ w.name }`,
-          req:    w.cpuReq.toFixed(3),
-          use:    w.cpuUse < 0.001 ? t(`${ k }.tiny`) : w.cpuUse,
-          eff:    pct(w.cpuEff),
+          req:    fmtCores(w.cpuReq),
+          use:    fmtCores(w.cpuUse, w.cpuEff),
+          eff:    w.cpuEff === null ? '—' : pct(w.cpuEff),
           amount: fmtMoney(w.total),
-          month:  fmtMoney(w.total * c.month),
+          month:  fmtMonthly(w.total * c.month),
         })).join('; ')
       }),
     };
@@ -139,7 +169,7 @@ export function actionText(c: Context, item: Item): { title: string; text: strin
     return {
       title: t(`${ k }.title`),
       text:  t(`${ k }.text`, {
-        pct: n2(a.pct), idle: fmtMoney(a.idle), month: fmtMoney(a.idle * c.month), who: t(`${ k }.${ a.shared ? 'whoShared' : 'whoSeparate' }`)
+        pct: pctValue(a.pct), idle: fmtMoney(a.idle), month: fmtMonthly(a.idle * c.month), who: t(`${ k }.${ a.shared ? 'whoShared' : 'whoSeparate' }`)
       }),
     };
   case 'gate':
@@ -157,12 +187,14 @@ export function workloadNoteText(t: Translate, item: Item): { title: string; tex
   const w = item.args as unknown as Workload;
   const k = `${ K }.workloads.notes.${ item.code }`;
   const args: Record<string, unknown> = {
-    name: w.name, amount: fmtMoney(w.total), eff: pct(item.code === 'ramIdle' ? w.ramEff : w.cpuEff)
+    name: w.name, amount: fmtMoney(w.total), eff: (item.code === 'ramIdle' ? w.ramEff : w.cpuEff) === null ? '—' : pct(item.code === 'ramIdle' ? w.ramEff : w.cpuEff)
   };
 
   if (item.code === 'cpuIdle' || item.code === 'cpuIdleOnly') {
     args.req = w.cpuReq;
-    args.ramEff = pct(w.ramEff);
+    args.ramEff = w.ramEff === null ? '—' : pct(w.ramEff);
+  } else if (item.code === 'overNoRequest') {
+    args.use = fmtCores(w.cpuUse);
   } else if (item.code === 'standby') {
     args.kind = w.kind;
   } else if (item.code === 'ramIdle') {

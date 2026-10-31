@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
 import {
-  gateCheckText, actionText, monthReasonText, missingText, storageNoteText, fillNoteText, missingMinutes, isEmptyPeriod, gateSummary
+  gateCheckText, actionText, monthReasonText, missingText, storageNoteText, fillNoteText, missingMinutes, isEmptyPeriod, gateSummary, gateVerdictText
 } from '../describe';
 import type { GateCheck, Month } from '../types';
 
@@ -120,5 +120,17 @@ describe('gate summary and empty period', () => {
     expect(isEmptyPeriod({ checks: [check('has_data', 'block'), check('coverage', 'unknown')] })).toBe(true);
     expect(isEmptyPeriod({ checks: [check('has_data', 'ok')] })).toBe(false);
     expect(isEmptyPeriod(null)).toBe(false);
+  });
+});
+
+describe('gateVerdictText', () => {
+  it('names the checks that did not pass, with their values', () => {
+    const c = (code: string, status: string, value: number | null) => ({
+      code, status, value, unit: '%'
+    }) as GateCheck;
+    const text = gateVerdictText(t, { verdict: 'mark', checks: [c('coverage', 'mark', 95), c('unallocated', 'mark', 87.27), c('estimated', 'ok', 0)] });
+
+    expect(text).toBe('costReport.gate.because.mark{"list":"costReport.gate.check.coverage.name 95.00%costReport.gate.summary.sepcostReport.gate.check.unallocated.name 87.27%"}');
+    expect(gateVerdictText(t, { verdict: 'ok', checks: [c('coverage', 'ok', 100)] })).toBe('costReport.gate.because.ok');
   });
 });

@@ -13,7 +13,7 @@ import { getSeries, ApiError } from '../../utils/api';
 import {
   averages, buildChart, nearestPoint, pathOf, valueOf, wantedStep, xOf, BOX, Metric
 } from '../../utils/series';
-import { fmtLocal, stepParts, timeZone } from '../../utils/format';
+import { fmtLocal, pctValue, stepParts, timeZone } from '../../utils/format';
 import type { Report, Series } from '../../utils/types';
 
 export default defineComponent({
@@ -120,7 +120,8 @@ export default defineComponent({
     });
 
     const ids = computed(() => props.report.depts.map((d) => d.id).filter((id) => props.filter === 'all' || id === props.filter));
-    const chart = computed(() => (series.value ? buildChart(series.value, ids.value, metric.value) : null));
+    // A single day is labelled every 2 h; other periods pick by length.
+    const chart = computed(() => (series.value ? buildChart(series.value, ids.value, metric.value, Date.now(), props.view.day ? 2 * 3600 * 1000 : undefined) : null));
     const missing = computed(() => (series.value ? series.value.expected - series.value.covered : 0));
     const tip = computed(() => {
       const c = chart.value;
@@ -164,11 +165,11 @@ export default defineComponent({
     const summary = computed(() => {
       const list = averages(series.value, ids.value, metric.value);
 
-      return list.length ? ctx.value.t(`costReport.usage.summaryAvg.${ metric.value }`, { list: list.map((a) => `${ ctx.value.depts.name(a.id) } ${ a.avg.toFixed(0) }%`).join(' · ') }) : ctx.value.t('costReport.usage.summaryNone');
+      return list.length ? ctx.value.t(`costReport.usage.summaryAvg.${ metric.value }`, { list: list.map((a) => `${ ctx.value.depts.name(a.id) } ${ pctValue(a.avg) }`).join(' · ') }) : ctx.value.t('costReport.usage.summaryNone');
     });
 
     return {
-      summary, ctx, metric, series, busy, pending, failure, chart, missing, tip, hover, move, load, stepText, pathOf, fmtLocal, BOX, zone: timeZone()
+      summary, pctValue, ctx, metric, series, busy, pending, failure, chart, missing, tip, hover, move, load, stepText, pathOf, fmtLocal, BOX, zone: timeZone()
     };
   },
 });
@@ -205,8 +206,9 @@ export default defineComponent({
             :key="o"
           ><input
             type="radio"
+            name="cr-step"
             :value="o"
-            :checked="o === series.step"
+            :checked="o === (busy ? pending : series.step)"
             :disabled="busy"
             @change="load(o)"
           > {{ stepText(o) }}</label>
@@ -378,7 +380,7 @@ export default defineComponent({
             :style="{ background: ctx.depts.color(r.id) }"
           />
           {{ ctx.depts.name(r.id) }}
-          <b>{{ r.v === null ? ctx.t('costReport.usage.tipNoValue') : `${ r.v.toFixed(1) }%` }}</b>
+          <b>{{ r.v === null ? ctx.t('costReport.usage.tipNoValue') : pctValue(r.v) }}</b>
           <span
             v-if="metric === 'cpu' && r.raw && r.raw.cpuReq"
             class="text-muted cr-small"

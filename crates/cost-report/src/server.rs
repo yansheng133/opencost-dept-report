@@ -113,6 +113,13 @@ impl App {
         }
     }
 
+    /// "Now" as far as OpenCost's data goes: its newest minutes are written
+    /// a few minutes late (measured 3 to 4), and counting them against the
+    /// window made "1h" sit on the 95 % coverage line.
+    pub fn data_now(&self) -> f64 {
+        now() - (self.cfg.ingest_lag_minutes * 60) as f64
+    }
+
     /// Read on every report so a ConfigMap update applies without a restart.
     pub fn rate_card(&self) -> Option<RateCard> {
         std::fs::read_to_string(&self.cfg.ratecard_file)
@@ -278,7 +285,7 @@ impl App {
     pub fn usage_series(&self, window: &str, step: Option<&str>) -> Option<Value> {
         // Steps offered and configured follow the window as the user named it;
         // the query is the resolved range (see coverage::resolve_window).
-        let (rs, re) = coverage::resolve_window(window, now())?;
+        let (rs, re) = coverage::resolve_window(window, self.data_now())?;
         let q = coverage::window_param(rs, re);
         let span = coverage::nominal_minutes(window);
         let default =
@@ -303,7 +310,7 @@ impl App {
 
     /// The full (unscoped) report for an OpenCost window.
     pub fn build_report(&self, window: &str) -> Result<Value, String> {
-        let (rs, re) = coverage::resolve_window(window, now())
+        let (rs, re) = coverage::resolve_window(window, self.data_now())
             .ok_or_else(|| format!("{window} has not started yet"))?;
         let user_window = window;
         let q = coverage::window_param(rs, re);
@@ -614,6 +621,7 @@ impl App {
                         },
                         "currency": card.and_then(|c| c.currency),
                         "dataSince": self.data_since(),
+                        "ingestLagMinutes": self.cfg.ingest_lag_minutes,
                     }),
                 )
             }
@@ -673,7 +681,8 @@ impl App {
                 )
             }
         };
-        if coverage::resolve_window(&window, now()).is_none() {
+        let resolved = coverage::resolve_window(&window, self.data_now());
+        if resolved.is_none() {
             return Response::api_error(
                 400,
                 "bad_window",
@@ -687,6 +696,23 @@ impl App {
             .unwrap_or_else(|e| e.into_inner())
             .get(&window)
             .cloned();
+        // A day still running is not refreshed in the background (only the
+        // configured windows are), so it is rebuilt here once it is older than
+        // the cache period; otherwise "today" froze at its first answer.
+        let running = !self.cfg.windows.contains(&window)
+            && resolved.is_some_and(|(_, end)| end as f64 >= self.data_now() - 60.0);
+        let too_old = |e: &Entry| now() - e.fetched > self.cfg.cache_ttl as f64;
+        let cached = match cached {
+            Some(e) if running && too_old(&e) => {
+                self.refresh(&window);
+                self.cache
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .get(&window)
+                    .cloned()
+            }
+            other => other,
+        };
         let entry = match cached {
             Some(e) if e.data.is_some() => e,
             // Absolute days and windows not refreshed yet are built on demand.
@@ -722,7 +748,9 @@ impl App {
             "generatedAt": fmt_iso(entry.fetched),
             "ageSeconds": (now() - entry.fetched).round(),
             "ttlSeconds": self.cfg.cache_ttl,
-            "stale": entry.stale,
+            // Stale also when nothing refreshed it for a while (a background
+            // refresh hung, or a running day failed to rebuild).
+            "stale": entry.stale || now() - entry.fetched > (3 * self.cfg.cache_ttl) as f64,
             "staleReason": entry.error,
             "windows": self.cfg.windows,
             "scope": scope_json,

@@ -65,6 +65,8 @@ describe('filters', () => {
 
     expect(validFilter('rd', r)).toBe('rd');
     expect(validFilter('it', r)).toBe('all');
+    // A configured department is kept even when this period has no rows for it.
+    expect(validFilter('it', r, ['rd', 'it'])).toBe('it');
   });
 
   it('month departments, largest first', () => {

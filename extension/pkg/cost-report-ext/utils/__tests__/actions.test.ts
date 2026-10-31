@@ -78,7 +78,7 @@ describe('nextActions', () => {
     const a = nextActions(r, false);
 
     expect(a[0].code).toBe('rightsize');
-    expect((a[0].args.workloads as Workload[]).map((w) => [w.name, w.total, Number(w.cpuEff.toFixed(2))])).toStrictEqual([['a', 2, 0.1]]);
+    expect((a[0].args.workloads as Workload[]).map((w) => [w.name, w.total, Number((w.cpuEff ?? 0).toFixed(2))])).toStrictEqual([['a', 2, 0.1]]);
   });
 });
 
@@ -108,6 +108,16 @@ describe('workloadNotes', () => {
     // (no stateful or per-node workload with low usage): no such note.
     expect(n.map((x) => [x.code, x.args.name])).toStrictEqual([['cpuIdleOnly', 'idle'], ['ramIdle', 'mem'], ['over', 'hot']]);
     expect(workloadNotes([])).toStrictEqual([]);
+  });
+
+  it('a workload using CPU without any request comes first among "using more"', () => {
+    const n = workloadNotes([wl({
+      name: 'noreq', cpuReq: 0, cpuEff: null, cpuUse: 0.2
+    }), wl({ name: 'hot', cpuEff: 1.4 }), wl({
+      name: 'quiet', cpuReq: 0, cpuEff: null, cpuUse: 0
+    })]);
+
+    expect(n.map((x) => [x.code, x.args.name])).toStrictEqual([['overNoRequest', 'noreq']]);
   });
 
   it('says "reserved capacity" only when both resources idle, and gives a low-usage standby example', () => {

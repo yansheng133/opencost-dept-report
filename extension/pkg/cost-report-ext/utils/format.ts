@@ -5,26 +5,53 @@ export const n4 = (v: unknown) => Number(v ?? 0).toFixed(4);
 export const n2 = (v: unknown) => Number(v ?? 0).toFixed(2);
 
 /**
- * A usage figure rounded by the backend (cores to 0.001, MiB to 1). Zero
- * next to a non-zero efficiency is "<0.001", not 0: something was used.
+ * Usage in cores, always three decimals so a column lines up (0.010 next
+ * to 0.026, not 0.01). The backend rounds to 0.001; a zero next to a
+ * non-zero efficiency was used a little and reads "<0.001", a true zero
+ * reads 0.000. Tables and the actions text use this same function.
  */
-export function smallUse(v: number | null | undefined, eff: number | null | undefined, floor: string): string {
+export function fmtCores(v: number | null | undefined, eff?: number | null): string {
   const n = Number(v ?? 0);
 
-  return n === 0 && Number(eff ?? 0) > 0 ? `<${ floor }` : String(n);
+  return n === 0 && Number(eff ?? 0) > 0 ? '<0.001' : n.toFixed(3);
 }
 
-/** A ratio (0.123) as a percentage ("12.3%"). */
-export const pct = (v: unknown) => `${ (Number(v ?? 0) * 100).toFixed(1) }%`;
+/** Usage in MiB (whole numbers), "<1" for a used-but-rounded-away zero. */
+export function fmtMiB(v: number | null | undefined, eff?: number | null): string {
+  const n = Number(v ?? 0);
+
+  return n === 0 && Number(eff ?? 0) > 0 ? '<1' : n.toFixed(0);
+}
+
+// Every percentage on the page has two decimals: the same coverage reads
+// the same in the banner, the gate and Data quality (99.46% is below a
+// 99.5% threshold; "99.5%" would contradict the gate).
+const PCT_DIGITS = 2;
+
+function pctText(n: number): string {
+  if (!isFinite(n)) {
+    return '—';
+  }
+  const step = 10 ** -PCT_DIGITS;
+
+  if (n !== 0 && Math.abs(n) < step / 2) {
+    return `${ n > 0 ? '<' : '>-' }${ step.toFixed(PCT_DIGITS) }%`;
+  }
+
+  return `${ n.toFixed(PCT_DIGITS) }%`;
+}
+
+/** A ratio (0.123) as a percentage ("12.30%"). */
+export const pct = (v: unknown) => pctText(Number(v ?? 0) * 100);
 
 /** A ratio, or "—" when the denominator is zero or unknown. */
 export function share(part: number | null | undefined, whole: number | null | undefined): string {
   return whole && part !== null && part !== undefined ? pct(part / whole) : '—';
 }
 
-/** A percentage the backend already computed (99.6 → "99.6%"), or "—". */
+/** A percentage the backend already computed (99.6 → "99.60%"), or "—". */
 export function pctValue(v: number | null | undefined): string {
-  return v === null || v === undefined ? '—' : `${ v }%`;
+  return v === null || v === undefined ? '—' : pctText(Number(v));
 }
 
 export function fmtBytes(b: number | null | undefined): string {

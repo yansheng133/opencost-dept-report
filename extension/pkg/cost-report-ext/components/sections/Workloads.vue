@@ -10,7 +10,7 @@ import { useReportContext } from '../../composables/useReportContext';
 import { filterWorkloads } from '../../utils/scope';
 import { workloadNotes } from '../../utils/actions';
 import { workloadNoteText } from '../../utils/describe';
-import { capRows, smallUse } from '../../utils/format';
+import { capRows, fmtCores, fmtMiB } from '../../utils/format';
 import { TABLE_LIMITS } from '../../config/backend';
 import type { Report } from '../../utils/types';
 import { fmtMoney } from '../../utils/money';
@@ -44,7 +44,7 @@ export default defineComponent({
     });
 
     return {
-      ctx, open, list, shown, notes, fmtMoney, smallUse, summary, limit: TABLE_LIMITS.workloads
+      ctx, open, list, shown, notes, fmtMoney, fmtCores, fmtMiB, summary, limit: TABLE_LIMITS.workloads
     };
   },
 });
@@ -125,7 +125,7 @@ export default defineComponent({
               >{{ w.env || ctx.t('costReport.common.untagged') }}</span>
             </td>
             <td class="cr-num">
-              {{ w.cpuReq }} → {{ smallUse(w.cpuUse, w.cpuEff, '0.001') }}
+              {{ fmtCores(w.cpuReq) }} → {{ fmtCores(w.cpuUse, w.cpuEff) }}
             </td>
             <td>
               <Eff
@@ -134,7 +134,7 @@ export default defineComponent({
               />
             </td>
             <td class="cr-num">
-              {{ w.ramReqMi }} → {{ smallUse(w.ramUseMi, w.ramEff, '1') }} MiB
+              {{ fmtMiB(w.ramReqMi) }} → {{ fmtMiB(w.ramUseMi, w.ramEff) }} MiB
             </td>
             <td>
               <Eff

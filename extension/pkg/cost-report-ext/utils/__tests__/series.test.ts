@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
 import {
-  averages, buildChart, partialIndex, spreadLabels, timedPoints, valueOf, wantedStep, nearestPoint, xOf, BOX
+  averages, buildChart, partialIndex, spreadLabels, timeTicks, tickInterval, timedPoints, valueOf, wantedStep, nearestPoint, xOf, BOX
 } from '../series';
 import type { Series, SeriesPoint } from '../types';
 
@@ -140,5 +140,30 @@ describe('averages', () => {
     expect(a[0].id).toBe('rd');
     expect(a[0].avg).toBeCloseTo(20);
     expect(averages(s, ['rd'], 'ram')).toStrictEqual([]);
+  });
+});
+
+describe('timeTicks', () => {
+  it('lands on round local times and adds nothing for the end', () => {
+    const t0 = Date.parse('2026-10-30T04:38:00Z');
+    const t1 = t0 + 24 * 3600e3;
+    const ticks = timeTicks(t0, t1);
+
+    expect(tickInterval(t1 - t0)).toBe(3 * 3600e3);
+    for (const tk of ticks) {
+      const d = new Date(tk.start);
+
+      expect(d.getMinutes()).toBe(0);
+      expect(d.getHours() % 3).toBe(0);
+      expect(Date.parse(tk.start)).toBeLessThanOrEqual(t1);
+    }
+    expect(ticks.length).toBe(8);
+    const week = timeTicks(t0, t0 + 7 * 864e5);
+
+    expect(week.every((tk) => new Date(tk.start).getHours() === 0 && tk.withDate)).toBe(true);
+    const hour = timeTicks(t0, t0 + 3600e3);
+
+    expect(hour.map((tk) => new Date(tk.start).getMinutes() % 10)).toStrictEqual(hour.map(() => 0));
+    expect(timeTicks(t0, t0 + 864e5, 2 * 3600e3).length).toBe(12);
   });
 });

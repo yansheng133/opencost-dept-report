@@ -13,7 +13,7 @@
 //!   "windows": ["1h", "24h", "7d"], "defaultWindow": "24h",
 //!   "seriesSteps": { "1h": "5m", "24h": "10m", "7d": "1h" },
 //!   "cacheTtlSeconds": 60, "seriesTtlSeconds": 300, "seriesBudget": 300,
-//!   "coverageJob": "opencost",
+//!   "coverageJob": "opencost", "ingestLagMinutes": 5,
 //!   "timeouts": { "opencostSeconds": 30, "prometheusSeconds": 5 },
 //!   "seals": { "enabled": true, "dir": "/seals", "daysBack": 7 },
 //!   "thresholds": { "coverageOk": 99, "coverageMark": 95, "...": 0 }
@@ -52,6 +52,9 @@ pub struct Config {
     pub seals_enabled: bool,
     pub seal_dir: PathBuf,
     pub seal_days_back: u32,
+    /// Minutes before now that OpenCost has not written yet; queries stop
+    /// that far back so the newest minutes do not read as unmeasured.
+    pub ingest_lag_minutes: u64,
     pub ratecard_file: PathBuf,
 }
 
@@ -208,6 +211,7 @@ impl Config {
                 .unwrap_or(true),
             seal_dir: PathBuf::from(s(&v, "/seals/dir", "/seals")),
             seal_days_back: u(&v, "/seals/daysBack", 7).clamp(1, 60) as u32,
+            ingest_lag_minutes: u(&v, "/ingestLagMinutes", 5).min(60),
             ratecard_file,
         })
     }
@@ -262,6 +266,7 @@ mod tests {
         assert_eq!(c.agg_dept(), "label:cost-center");
         assert_eq!(c.agg_dept_env(), "label:cost-center,label:env");
         assert_eq!(c.series_steps["24h"], "10m");
+        assert_eq!(c.ingest_lag_minutes, 5);
         assert_eq!(c.window_for(None, None).unwrap(), "24h");
         assert_eq!(c.window_for(Some("7d"), None).unwrap(), "7d");
         assert!(c.window_for(Some("30d"), None).is_err());

@@ -113,9 +113,22 @@ export default defineComponent({
       // When the first seal can appear, said once for both lists: from the
       // backend's earliest data when known, else the rule.
       firstSeal: computed(() => {
-        const at = firstSealAfter(config.value?.dataSince);
+        const since = config.value?.dataSince;
+        const at = firstSealAfter(since);
+        const zone = timeZone() || t('costReport.report.localTime');
 
-        return at === null ? t('costReport.periods.firstSealRule', { time: utcMidnightLocal() }) : t('costReport.periods.firstSealAt', { time: fmtLocal(new Date(at).toISOString(), true), zone: timeZone() || t('costReport.report.localTime') });
+        if (at === null || !since) {
+          return t('costReport.periods.firstSealRule', { time: utcMidnightLocal() });
+        }
+        // Why not earlier: the day the data starts in is only partly
+        // covered and is not sealed; the next full UTC day is.
+        const firstDay = new Date(at - 864e5).toISOString().slice(0, 10);
+        const partial = Date.parse(since) % 864e5 !== 0 ? since.slice(0, 10) : '';
+        const when = t('costReport.periods.firstSealAt', {
+          day: firstDay.slice(5), time: fmtLocal(new Date(at).toISOString(), true), zone
+        });
+
+        return partial ? `${ t('costReport.periods.partialDay', { day: partial.slice(5) }) }${ when }` : when;
       }),
       pctValue,
       reportRoute,
@@ -220,9 +233,9 @@ export default defineComponent({
           </div>
           <div class="text-muted cr-small">
             {{ t('costReport.periods.sealedDays', { sealed: m.sealedDays, expected: m.expectedDays }) }}<span v-if="m.current">{{ t('costReport.periods.notOver', { days: m.monthDays }) }}</span>
-            <span v-if="m.minCoverage !== null && m.minCoverage !== undefined"> · {{ t('costReport.periods.minCoverage', { pct: m.minCoverage }) }}</span>
+            <span v-if="m.minCoverage !== null && m.minCoverage !== undefined"> · {{ t('costReport.periods.minCoverage', { pct: pctValue(m.minCoverage) }) }}</span>
             <span v-if="m.gapMinutes"> · {{ t('costReport.periods.gapMinutes', { minutes: m.gapMinutes }) }}</span>
-            <span v-if="m.estimatedPct"> · {{ t('costReport.periods.estimated', { pct: m.estimatedPct }) }}</span>
+            <span v-if="m.estimatedPct"> · {{ t('costReport.periods.estimated', { pct: pctValue(m.estimatedPct) }) }}</span>
           </div>
           <div
             v-if="m.missingList"

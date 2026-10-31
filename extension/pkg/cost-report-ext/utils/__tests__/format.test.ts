@@ -1,14 +1,18 @@
 import { describe, it, expect } from '@jest/globals';
 import {
-  n4, pct, share, smallUse, pctValue, fmtBytes, fmtLocal, stepParts, monthFactor, dayRanges, capRows
+  n4, pct, share, fmtCores, fmtMiB, pctValue, fmtBytes, fmtLocal, stepParts, monthFactor, dayRanges, capRows
 } from '../format';
 
-describe('smallUse', () => {
-  it('does not show 0 when something was used', () => {
-    expect(smallUse(0, 0.003, '0.001')).toBe('<0.001');
-    expect(smallUse(0, 0, '0.001')).toBe('0');
-    expect(smallUse(0.25, 0.5, '0.001')).toBe('0.25');
-    expect(smallUse(0, 0.01, '1')).toBe('<1');
+describe('usage', () => {
+  it('fixed decimals; "<" only for a used-but-rounded zero', () => {
+    expect(fmtCores(0.01)).toBe('0.010');
+    expect(fmtCores(0.026)).toBe('0.026');
+    expect(fmtCores(0, 0.003)).toBe('<0.001');
+    expect(fmtCores(0, 0)).toBe('0.000');
+    expect(fmtCores(0, null)).toBe('0.000');
+    expect(fmtMiB(12)).toBe('12');
+    expect(fmtMiB(0, 0.01)).toBe('<1');
+    expect(fmtMiB(0)).toBe('0');
   });
 });
 
@@ -16,11 +20,14 @@ describe('numbers', () => {
   it('formats', () => {
     expect(n4(1.23456)).toBe('1.2346');
     expect(n4(null)).toBe('0.0000');
-    expect(pct(0.1234)).toBe('12.3%');
+    // One rule for every percentage: two decimals, '<0.01%' for tiny ones.
+    expect(pct(0.1234)).toBe('12.34%');
+    expect(pctValue(0.004)).toBe('<0.01%');
+    expect(pctValue(0)).toBe('0.00%');
     expect(share(1, 0)).toBe('—');
-    expect(share(1, 4)).toBe('25.0%');
+    expect(share(1, 4)).toBe('25.00%');
     expect(pctValue(null)).toBe('—');
-    expect(pctValue(99.6)).toBe('99.6%');
+    expect(pctValue(99.6)).toBe('99.60%');
   });
 
   it('sizes in powers of two', () => {

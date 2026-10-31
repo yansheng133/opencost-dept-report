@@ -11,8 +11,8 @@ import { useReportContext } from '../../composables/useReportContext';
 import {
   foldAll, foldedSet, saveFolded, activeFilter, openRequest
 } from '../CrSection.vue';
-import { gateCheckText, gateSummary } from '../../utils/describe';
-import { n2 } from '../../utils/format';
+import { gateCheckText, gateSummary, gateVerdictText } from '../../utils/describe';
+import { n2, pctValue } from '../../utils/format';
 import type { Gate } from '../../utils/types';
 
 const ID = 'gate';
@@ -41,7 +41,7 @@ export default defineComponent({
     });
 
     return {
-      ctx, checks, n2, folded, toggle, activeFilter, summary: computed(() => gateSummary(ctx.value.t, props.gate))
+      ctx, checks, n2, pctValue, folded, toggle, activeFilter, summary: computed(() => gateSummary(ctx.value.t, props.gate)), because: computed(() => gateVerdictText(ctx.value.t, props.gate))
     };
   },
 });
@@ -77,7 +77,7 @@ export default defineComponent({
     </div>
     <div v-show="!folded">
       <p class="cr-desc">
-        {{ ctx.t(`costReport.gate.verdictText.${ gate.verdict }`) }}
+        {{ ctx.t(`costReport.gate.verdictText.${ gate.verdict }`) }} {{ because }}
       </p>
       <div class="cr-checks">
         <div
@@ -109,7 +109,7 @@ export default defineComponent({
             </div>
           </div>
           <div class="cr-num cr-check-val">
-            {{ c.value === null || c.value === undefined || c.status === 'unknown' ? '—' : `${ n2(c.value) }${ c.unit || '' }` }}
+            {{ c.value === null || c.value === undefined || c.status === 'unknown' ? '—' : (c.unit === '%' ? pctValue(c.value) : `${ n2(c.value) }${ c.unit || '' }`) }}
           </div>
         </div>
       </div>
