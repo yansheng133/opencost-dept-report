@@ -1,0 +1,8 @@
+plugin/cost-report-ext-1.2.0.umd.min.37.js
+plugin/cost-report-ext-1.2.0.umd.min.37.js.map
+plugin/cost-report-ext-1.2.0.umd.min.671.js
+plugin/cost-report-ext-1.2.0.umd.min.671.js.map
+plugin/cost-report-ext-1.2.0.umd.min.js
+plugin/cost-report-ext-1.2.0.umd.min.js.map
+plugin/img/icon.32ec56e5.svg
+plugin/package.json
