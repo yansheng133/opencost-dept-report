@@ -98,7 +98,7 @@ Rancher 的角色範本見 `deploy/rancher/`。
 ### `GET reports?window=24h` 或 `GET reports?day=2026-09-24`（list）
 
 `window=24h` 是「到現在為止的最近 24 小時」：後端換算成絕對區間再問 OpenCost（OpenCost 自己的相對區間會對齊整點、包含還沒發生的時間）。
-OpenCost 最新的幾分鐘會晚一點才寫入，所以區間結束在現在往前 `ingestLagMinutes`（預設 5）分鐘。指定的日子還沒結束時，只算到那個時間點，而且報表超過 `ttlSeconds` 就重算；還沒開始的日子回 400 `bad_window`。實際查詢的區間在 `window.requested`（`start`、`end`）。
+OpenCost 最新的幾分鐘會晚一點才寫入，所以區間結束在現在往前 `ingestLagMinutes`（預設 5）分鐘、再往下對齊到 5 分鐘（OpenCost 以 5 分鐘為單位寫入）。指定的日子還沒結束時，只算到那個時間點，而且報表超過 `ttlSeconds` 就重算；還沒開始的日子回 400 `bad_window`。實際查詢的區間在 `window.requested`（`start`、`end`）。
 
 主報表。欄位跟舊版 `/api/report` 相同（見 `demo` 分支的 `app/app.py` `build_report`），差別：
 

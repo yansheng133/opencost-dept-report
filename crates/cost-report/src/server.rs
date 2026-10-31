@@ -116,8 +116,12 @@ impl App {
     /// "Now" as far as OpenCost's data goes: its newest minutes are written
     /// a few minutes late (measured 3 to 4), and counting them against the
     /// window made "1h" sit on the 95 % coverage line.
+    ///
+    /// It also writes in 5-minute blocks: at 05:17 the data ended at 05:10,
+    /// so the lagged time is aligned down to a 5-minute boundary as well.
     pub fn data_now(&self) -> f64 {
-        now() - (self.cfg.ingest_lag_minutes * 60) as f64
+        let t = now() - (self.cfg.ingest_lag_minutes * 60) as f64;
+        (t / 300.0).floor() * 300.0
     }
 
     /// Read on every report so a ConfigMap update applies without a restart.
