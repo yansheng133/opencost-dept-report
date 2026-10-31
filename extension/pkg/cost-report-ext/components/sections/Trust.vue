@@ -78,7 +78,9 @@ export default defineComponent({
           // nodes yet, not a cost to reconcile against (reason from the backend).
           note:  r.reason === 'assets_not_positive' ? t(`${ k }.reconNotPositive`, { assets: money(r.assets) }) : r.assets ? t(`${ k }.reconNote`, {
             allocated: money(r.allocated), assets: money(r.assets), byType: Object.entries(r.byType || {}).map(([x, v]) => `${ x } ${ money(v) }`).join(', ')
-          }) + (r.scaled ? t(`${ k }.reconScaled`, { measured: money(r.assetsMeasured), assetsMinutes: r.assetsMinutes, minutes: r.allocatedMinutes }) : '') : t(`${ k }.reconUnknown`),
+          }) + (r.scaled ? t(`${ k }.reconScaled`, {
+            measured: money(r.assetsMeasured), assetsMinutes: r.assetsMinutes, minutes: r.allocatedMinutes
+          }) : '') : t(`${ k }.reconUnknown`),
         });
       }
       if (f && f.notes?.length) {

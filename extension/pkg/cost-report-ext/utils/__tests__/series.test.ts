@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
 import {
-  buildChart, partialIndex, spreadLabels, timedPoints, valueOf, wantedStep, nearestPoint, xOf, BOX
+  averages, buildChart, partialIndex, spreadLabels, timedPoints, valueOf, wantedStep, nearestPoint, xOf, BOX
 } from '../series';
 import type { Series, SeriesPoint } from '../types';
 
@@ -100,5 +100,45 @@ describe('wantedStep and nearestPoint', () => {
     const c = buildChart(series([pt(0, 0.1), pt(10, 0.1), pt(20, 0.1)]), ['rd'], 'cpu', T0 + 1e9)!;
 
     expect(nearestPoint(c, xOf(c.pts[1].ts, c.t0, c.t1) + 1)).toBe(1);
+  });
+});
+
+describe('averages', () => {
+  it('weights by minutes and skips segments without data', () => {
+    const s = {
+      step:        '10m',
+      stepMinutes: 10,
+      covered:     2,
+      expected:    3,
+      options:     [],
+      defaultStep: '10m',
+      points:      [
+        {
+          start:   '2026-09-24T00:00:00Z',
+          minutes: 10,
+          depts:   {
+            rd: {
+              cpu: 0.5, ram: null, cpuReq: 1, cpuUse: 0.5
+            }
+          }
+        },
+        { start: '2026-09-24T00:10:00Z', depts: null },
+        {
+          start:   '2026-09-24T00:20:00Z',
+          minutes: 30,
+          depts:   {
+            rd: {
+              cpu: 0.1, ram: null, cpuReq: 1, cpuUse: 0.1
+            }
+          }
+        },
+      ],
+    } as unknown as Parameters<typeof averages>[0];
+    const a = averages(s, ['rd', 'mfg'], 'cpu');
+
+    expect(a).toHaveLength(1);
+    expect(a[0].id).toBe('rd');
+    expect(a[0].avg).toBeCloseTo(20);
+    expect(averages(s, ['rd'], 'ram')).toStrictEqual([]);
   });
 });

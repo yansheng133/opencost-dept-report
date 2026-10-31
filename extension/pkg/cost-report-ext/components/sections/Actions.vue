@@ -28,7 +28,9 @@ export default defineComponent({
       }, a));
     });
 
-    return { ctx, items, summary: computed(() => ctx.value.t('costReport.actions.summary', { count: items.value.length })) };
+    return {
+      ctx, items, summary: computed(() => ctx.value.t('costReport.actions.summary', { count: items.value.length }))
+    };
   },
 });
 </script>

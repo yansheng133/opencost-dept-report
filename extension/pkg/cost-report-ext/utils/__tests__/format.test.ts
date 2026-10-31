@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
 import {
-  n4, money, pct, share, pctValue, fmtBytes, fmtLocal, stepParts, monthFactor, dayRanges, capRows
+  n4, money, moneyDigits, moneyAt, moneyCol, pct, share, pctValue, fmtBytes, fmtLocal, stepParts, monthFactor, dayRanges, capRows
 } from '../format';
 
 describe('money', () => {
@@ -13,6 +13,22 @@ describe('money', () => {
     expect(money(0)).toBe('0');
     expect(money(null)).toBe('0');
     expect(money(NaN)).toBe('0');
+  });
+});
+
+describe('money columns', () => {
+  it('one decimal count per column, from its largest value', () => {
+    expect(moneyDigits([107, 83.99, 47.25])).toBe(0);
+    expect(moneyDigits([5.39, 0.9386])).toBe(2);
+    expect(moneyDigits([0, 0.0025])).toBe(4);
+    expect(moneyDigits([-150, 1])).toBe(0);
+    expect(moneyDigits([])).toBe(4);
+    const col = moneyCol([107, 83.99, 47.25]);
+
+    expect([107, 83.99, 47.25, 1234.4].map(col)).toStrictEqual(['107', '84', '47', '1,234']);
+    expect([5.39, 0.9386].map(moneyCol([5.39, 0.9386]))).toStrictEqual(['5.39', '0.94']);
+    expect(moneyAt(0, 4)).toBe('0.0000');
+    expect(moneyAt(null, 2)).toBe('0.00');
   });
 });
 

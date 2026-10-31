@@ -88,11 +88,19 @@ describe('notes', () => {
 describe('missingMinutes', () => {
   it('counts the uncovered part of the period, not only breaks inside it', () => {
     // A day with 117 measured minutes and one 1-minute break.
-    expect(missingMinutes({ requestedMinutes: 1440, measuredMinutes: 117.2, gapMinutes: 1 })).toStrictEqual({ edge: 1323, inside: 1 });
-    expect(missingMinutes({ requestedMinutes: 60, measuredMinutes: 60, gapMinutes: 0 })).toStrictEqual({ edge: 0, inside: 0 });
+    expect(missingMinutes({
+      requestedMinutes: 1440, measuredMinutes: 117.2, gapMinutes: 1
+    })).toStrictEqual({ edge: 1323, inside: 1 });
+    expect(missingMinutes({
+      requestedMinutes: 60, measuredMinutes: 60, gapMinutes: 0
+    })).toStrictEqual({ edge: 0, inside: 0 });
     // More measured than requested (rounding at the edges) is not negative.
-    expect(missingMinutes({ requestedMinutes: 60, measuredMinutes: 61, gapMinutes: 2 })).toStrictEqual({ edge: 0, inside: 2 });
-    expect(missingMinutes({ requestedMinutes: null, measuredMinutes: null, gapMinutes: 3 })).toStrictEqual({ edge: 0, inside: 3 });
+    expect(missingMinutes({
+      requestedMinutes: 60, measuredMinutes: 61, gapMinutes: 2
+    })).toStrictEqual({ edge: 0, inside: 2 });
+    expect(missingMinutes({
+      requestedMinutes: null, measuredMinutes: null, gapMinutes: 3
+    })).toStrictEqual({ edge: 0, inside: 3 });
     expect(missingMinutes(null)).toStrictEqual({ edge: 0, inside: 0 });
   });
 });

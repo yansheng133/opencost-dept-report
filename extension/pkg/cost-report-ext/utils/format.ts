@@ -12,13 +12,36 @@ export const n2 = (v: unknown) => Number(v ?? 0).toFixed(2);
 export function money(v: unknown): string {
   const n = Number(v ?? 0);
 
-  if (!isFinite(n) || n === 0) {
-    return '0';
-  }
-  const a = Math.abs(n);
-  const d = a >= 100 ? 0 : a >= 1 ? 2 : 4;
+  return !isFinite(n) || n === 0 ? '0' : moneyAt(n, moneyDigits([n]));
+}
 
-  return n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+/**
+ * Decimals for a column or group of amounts, decided by its largest value
+ * (≥100 → 0, ≥1 → 2, else 4). Every cell of a column uses the same count,
+ * so 107 / 83.99 / 47.25 in one column does not happen.
+ */
+export function moneyDigits(values: unknown[]): number {
+  const m = values.reduce<number>((acc, v) => {
+    const n = Math.abs(Number(v ?? 0));
+
+    return isFinite(n) ? Math.max(acc, n) : acc;
+  }, 0);
+
+  return m >= 100 ? 0 : m >= 1 ? 2 : 4;
+}
+
+/** An amount with a fixed number of decimals and thousands separators. */
+export function moneyAt(v: unknown, digits: number): string {
+  const n = Number(v ?? 0);
+
+  return (isFinite(n) ? n : 0).toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+}
+
+/** A column's formatter: the decimals of its largest value for every cell. */
+export function moneyCol(values: unknown[]): (v: unknown) => string {
+  const d = moneyDigits(values);
+
+  return (v: unknown) => moneyAt(v, d);
 }
 
 /** A ratio (0.123) as a percentage ("12.3%"). */

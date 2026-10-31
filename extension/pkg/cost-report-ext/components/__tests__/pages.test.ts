@@ -126,8 +126,8 @@ describe('部門成本', () => {
     const html = w.html();
 
     expect(html).toContain('costReport.scope.filtered{"name":"研發部"}');
-    // Gate, unallocated, trust, actions and rates carry the badge.
-    expect(w.findAll('.cr-tag-scope').length).toBe(5);
+    // Gate, unallocated, trust and actions carry the badge (rates follow the filter).
+    expect(w.findAll('.cr-tag-scope').length).toBe(4);
     // Shared idle gets its own column so the row adds up.
     await w.find('input[type="radio"][value="true"]').setValue(true);
     await flushPromises();
@@ -140,7 +140,9 @@ describe('部門成本', () => {
     const none = report();
 
     none.gate = {
-      verdict: 'block', thresholds: {}, checks: [{
+      verdict:    'block',
+      thresholds: {},
+      checks:     [{
         code: 'has_data', value: null, unit: '', status: 'block', detail: { code: 'no_data' }
       }, {
         code: 'unallocated', value: 0, unit: '%', status: 'unknown'
@@ -153,7 +155,7 @@ describe('部門成本', () => {
     const html = w.html();
 
     expect(html).toContain('costReport.empty.titleDay{"day":"2026-10-30"}');
-    expect(html).toContain('costReport.report.dayPeriod{"day":"2026-10-30"}');
+    expect(html).toContain('costReport.report.dayPeriod{"day":"2026-10-30","from":');
     expect(html).toContain('costReport.report.pastDay');
     for (const id of ['gate', 'dept', 'usage', 'trust', 'rates']) {
       expect(w.find(`#${ id }`).exists()).toBe(false);

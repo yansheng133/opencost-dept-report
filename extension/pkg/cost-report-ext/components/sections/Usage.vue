@@ -11,7 +11,7 @@ import CrSection from '../CrSection.vue';
 import { useReportContext } from '../../composables/useReportContext';
 import { getSeries, ApiError } from '../../utils/api';
 import {
-  buildChart, nearestPoint, pathOf, valueOf, wantedStep, xOf, BOX, Metric
+  averages, buildChart, nearestPoint, pathOf, valueOf, wantedStep, xOf, BOX, Metric
 } from '../../utils/series';
 import { fmtLocal, stepParts, timeZone } from '../../utils/format';
 import type { Report, Series } from '../../utils/types';
@@ -160,7 +160,12 @@ export default defineComponent({
       hover.value = nearestPoint(c, (e.clientX - r.left) / r.width * BOX.W);
     }
 
-    const summary = computed(() => (series.value ? ctx.value.t('costReport.usage.summary', { step: stepText(series.value.step) }) : ''));
+    // Folded: the period's average per department, for the chosen resource.
+    const summary = computed(() => {
+      const list = averages(series.value, ids.value, metric.value);
+
+      return list.length ? ctx.value.t(`costReport.usage.summaryAvg.${ metric.value }`, { list: list.map((a) => `${ ctx.value.depts.name(a.id) } ${ a.avg.toFixed(0) }%`).join(' · ') }) : ctx.value.t('costReport.usage.summaryNone');
+    });
 
     return {
       summary, ctx, metric, series, busy, pending, failure, chart, missing, tip, hover, move, load, stepText, pathOf, fmtLocal, BOX, zone: timeZone()

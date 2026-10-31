@@ -69,7 +69,9 @@ costReport:
     clusterWideTip: "這一節是整個叢集的數字，不受部門篩選影響"
     loadingWindow: "正在載入最近 {window}…"
     pastDay: "過去的日子，不會自動更新（{time} 計算）"
-    dayPeriod: "{day}（UTC 00:00–24:00）"
+    dayPeriod: "{day}（UTC，{zone} {from} → {to}）"
+    today: "今天（UTC），尚未結束，數字還會變動（{age} 秒前更新）"
+    localTime: "本機時間"
   coverage:
     unknownTitle: 無法確認資料完整度
     unknown: "連不上 Prometheus（{reason}）。下面的金額可能少算了沒量到的時段，但目前無法判斷少了多少。"
@@ -121,7 +123,7 @@ costReport:
         why: 只改一邊不會有錯誤訊息，但帳單會跟系統永遠對不起來。
         policy: 價目表的單價必須等於系統實際計價用的單價
       unallocated:
-        name: 無法分攤佔比
+        name: "無法分攤佔比（獨立列帳基準）"
         why: 沒有部門標籤的成本，最後是平台團隊在付。這一項不擋帳，但它是標籤治理的指標。
         policy: "超過 {mark}% 要處理標籤"
     detail:
@@ -210,13 +212,17 @@ costReport:
     tipCpu: "（申請 {req} 核，用 {use}）"
     aria: 各部門使用率隨時間變化
     summary: "每 {step} 一點"
+    summaryAvg:
+      cpu: "平均 CPU 使用率：{list}"
+      ram: "平均記憶體使用率：{list}"
+    summaryNone: "這段期間沒有使用率資料"
   env:
     title: 各環境的成本
     description: "同一批工作負載再用 {label} 標籤切一次。"
     other: 未標環境
     none: 無
     note: "斜紋為 {first} 以外的環境。{first} {firstAmount}，其他環境 {otherAmount}，佔 {share}。"
-    summary: "{count} 種環境"
+    summary: "{list} {currency}"
   workloads:
     title: 每個工作負載付了多少、用了多少
     description: 計價依 max(申請量, 實際用量)。申請得多卻沒在用，差額就是可以回收的部分，但要先確認它是不是真的閒著。
@@ -245,6 +251,7 @@ costReport:
         text: "{name} 效率超過 100%，實際用量高於申請量，應該調高申請值。"
     summary: "{count} 個工作負載"
     overRequest: "實際用量超過申請量：排程時只保留了申請量，用多的部分是容量風險，不是效率好"
+    summaryTop: "{count} 個工作負載，最高是 {name} {amount} {currency}"
   storage:
     title: 儲存空間：申請了多少、用了多少
     description: 金額照申請容量 × 掛載時數 × 單價計算，跟實際放了多少無關。閒置金額用區間內的最高用量計算。
@@ -285,6 +292,7 @@ costReport:
         title: 量測時間
         text: "最近一次量測在 {at}。新寫入的資料要等下一次量測才會反映。"
     summary: "{count} 個 PVC，{amount} {currency}"
+    emptyDept: "{name}在這段期間沒有 PVC。"
   unalloc:
     title: 無法分攤的成本
     description: "沒有 {label} 標籤的東西無法歸屬到部門。系統元件通常以平台共用成本另行分攤，應用的 namespace 則應該補上標籤。"
@@ -293,6 +301,8 @@ costReport:
     rest: "其他 {count} 個 namespace"
     restTip: "包含：{list}"
     summary: "{amount}，佔總成本 {pct}"
+    summarySeparate: "{amount}，佔總成本 {pct}（獨立列帳）"
+    basisSeparate: "這一節以獨立列帳計算：各 namespace 的金額不含分攤到的閒置。上方「無法分攤」卡片按比例分攤時是 {shared}，這裡的合計是 {separate}。"
   trust:
     title: 資料可信度
     description: 這些數字是怎麼來的、完不完整。
@@ -387,8 +397,9 @@ costReport:
       resource: 資源
       rate: 單價
       unit: 計價單位
-      usage: 本期用量
+      usage: "各部門合計用量"
       amount: 金額
+      usageDept: "{name}的用量"
     unit:
       cpu: 每 vCPU 小時
       ram: 每 GiB 小時
@@ -411,7 +422,7 @@ costReport:
     description: 每天結帳一次並凍結。月報的來源是封存，不是 Prometheus，所以不受監控資料保留期限影響。
     disabled: 這個後端沒有開啟帳期封存。
     months: 按月彙總
-    monthsEmpty: 還沒有封存的帳期。後端每小時會把已結束的日子封存起來，累積幾天後這裡就會出現月報。
+    monthsEmpty: "還沒有封存的帳期。第一筆封存在資料涵蓋的第一個完整 UTC 日結束後一小時內產生（本機時間隔天 {time} 後），之後每天一筆，月報由這些封存彙總。"
     sealedDays: "已封存 {sealed}/{expected} 天"
     notOver: "（整月 {days} 天，尚未過完）"
     minCoverage: "最低單日覆蓋率 {pct}%"
@@ -431,7 +442,7 @@ costReport:
       day_marked: 有日子需要標示推估
       all_ok: 每一天都通過出帳關卡
     days: 每日封存
-    daysEmpty: 還沒有封存任何帳期。
+    daysEmpty: "還沒有封存任何一天。第一筆封存在資料涵蓋的第一個完整 UTC 日結束後一小時內產生（本機時間隔天 {time} 後）。"
     col:
       day: 帳期
       total: 總額

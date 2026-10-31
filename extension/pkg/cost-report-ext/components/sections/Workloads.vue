@@ -10,7 +10,7 @@ import { useReportContext } from '../../composables/useReportContext';
 import { filterWorkloads } from '../../utils/scope';
 import { workloadNotes } from '../../utils/actions';
 import { workloadNoteText } from '../../utils/describe';
-import { capRows, money } from '../../utils/format';
+import { capRows, money, moneyCol } from '../../utils/format';
 import { TABLE_LIMITS } from '../../config/backend';
 import type { Report } from '../../utils/types';
 
@@ -33,10 +33,18 @@ export default defineComponent({
     const shown = computed(() => capRows(list.value, TABLE_LIMITS.workloads, open.value).shown);
     const notes = computed(() => workloadNotes(list.value).map((n) => workloadNoteText(ctx.value.t, n)));
 
-    const summary = computed(() => ctx.value.t('costReport.workloads.summary', { count: list.value.length }));
+    const amount = computed(() => moneyCol(list.value.map((w) => w.total)));
+    // Count and the most expensive one (the list is sorted by amount).
+    const summary = computed(() => {
+      const top = list.value[0];
+
+      return top ? ctx.value.t('costReport.workloads.summaryTop', {
+        count: list.value.length, name: top.name, amount: money(top.total), currency: ctx.value.currency
+      }) : ctx.value.t('costReport.workloads.summary', { count: 0 });
+    });
 
     return {
-      ctx, open, list, shown, notes, money, summary, limit: TABLE_LIMITS.workloads
+      ctx, open, list, shown, notes, amount, summary, limit: TABLE_LIMITS.workloads
     };
   },
 });
@@ -135,7 +143,7 @@ export default defineComponent({
               />
             </td>
             <td class="cr-num">
-              {{ money(w.total) }}
+              {{ amount(w.total) }}
             </td>
           </tr>
           <tr v-if="!list.length">

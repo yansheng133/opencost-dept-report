@@ -69,7 +69,9 @@ costReport:
     clusterWideTip: "This section covers the whole cluster; the department filter does not apply"
     loadingWindow: "Loading the last {window}…"
     pastDay: "A past day; not refreshed (computed {time})"
-    dayPeriod: "{day} (UTC 00:00–24:00)"
+    dayPeriod: "{day} (UTC; {zone} {from} → {to})"
+    today: "Today (UTC), not over yet; the figures still change (updated {age} s ago)"
+    localTime: "local time"
   coverage:
     unknownTitle: Completeness cannot be checked
     unknown: "Prometheus is unreachable ({reason}). The amounts below may miss periods that were not measured, and how much cannot be told."
@@ -78,8 +80,8 @@ costReport:
     guessedStep: The scrape interval could not be read; 60 s was assumed, so coverage is approximate.
     gaps: "Gaps: {gaps}"
     gap: "{start} → {end} ({minutes} min)"
-    edge: "{count, plural, =1 {1 minute} other {# minutes}} at the start or end of the period have no data"
-    inside: "{count, plural, =1 {1 minute} other {# minutes}} are missing inside it"
+    edge: "{count, plural, =1 {1 minute at the start or end of the period has} other {# minutes at the start or end of the period have}} no data"
+    inside: "{count, plural, =1 {1 minute is} other {# minutes are}} missing inside it"
     sep: "; "
     why: "{why}."
     more: "Details in Data quality"
@@ -121,7 +123,7 @@ costReport:
         why: Changing only one side gives no error, but the bill never matches the system again.
         policy: The rate card must equal the rates the system actually uses
       unallocated:
-        name: Unallocated share
+        name: "Unallocated share (idle kept separate)"
         why: Costs without a department label end up paid by the platform team. Does not block billing; it measures label governance.
         policy: "Above {mark}% labels need work"
     detail:
@@ -210,13 +212,17 @@ costReport:
     tipCpu: " (requested {req} cores, used {use})"
     aria: Usage per department over time
     summary: "One point every {step}"
+    summaryAvg:
+      cpu: "Average CPU use: {list}"
+      ram: "Average memory use: {list}"
+    summaryNone: "No usage data in this period"
   env:
     title: Cost per environment
     description: "The same workloads split by the {label} label."
     other: No environment
     none: none
     note: "Hatched bars are environments other than {first}. {first} {firstAmount}, others {otherAmount}, {share} of the two."
-    summary: "{count, plural, =1 {1 environment} other {# environments}}"
+    summary: "{list} {currency}"
   workloads:
     title: What each workload paid and used
     description: Billed at max(requests, actual use). Requested but unused capacity can be reclaimed, once it is confirmed to be idle.
@@ -245,6 +251,7 @@ costReport:
         text: "{name} uses more than it requests (efficiency over 100%); its requests should go up."
     summary: "{count, plural, =1 {1 workload} other {# workloads}}"
     overRequest: "Uses more than requested: the scheduler reserved only the request, so the excess is a capacity risk, not efficiency"
+    summaryTop: "{count, plural, =1 {1 workload} other {# workloads}}; highest {name} {amount} {currency}"
   storage:
     title: "Storage: requested vs used"
     description: Cost is requested capacity × hours mounted × rate, whatever is stored. Idle cost uses the period’s peak usage.
@@ -285,6 +292,7 @@ costReport:
         title: Measured at
         text: "Last measured at {at}. New data shows after the next measurement."
     summary: "{count, plural, =1 {1 PVC} other {# PVCs}}, {amount} {currency}"
+    emptyDept: "{name} had no PVC in this period."
   unalloc:
     title: Unallocated cost
     description: "Anything without the {label} label cannot be allocated. Platform components are usually shared by a separate rule; application namespaces should be labelled."
@@ -293,6 +301,8 @@ costReport:
     rest: "{count, plural, =1 {1 other namespace} other {# other namespaces}}"
     restTip: "Includes: {list}"
     summary: "{amount}, {pct} of the total"
+    summarySeparate: "{amount}, {pct} of the total (idle separate)"
+    basisSeparate: "This section uses idle kept separate: namespace amounts exclude shared idle. The Unallocated card above shows {shared} with idle shared; the total here is {separate}."
   trust:
     title: Data quality
     description: Where these figures come from and how complete they are.
@@ -387,8 +397,9 @@ costReport:
       resource: Resource
       rate: Rate
       unit: Unit
-      usage: Usage this period
+      usage: "Departments' usage"
       amount: Cost
+      usageDept: "{name}'s usage"
     unit:
       cpu: per vCPU-hour
       ram: per GiB-hour
@@ -411,7 +422,7 @@ costReport:
     description: Each day is closed and frozen once. The monthly roll-up comes from these seals, not from Prometheus, so it does not depend on monitoring retention.
     disabled: Sealing is not enabled on this backend.
     months: By month
-    monthsEmpty: No sealed periods yet. The backend seals finished days every hour; monthly totals appear after a few days.
+    monthsEmpty: "No sealed periods yet. The first seal is made within an hour after the first full UTC day of data ends (after {time} the next day, local time), then one a day; monthly totals add those seals up."
     sealedDays: "{sealed}/{expected} days sealed"
     notOver: " (of {days}; month not over)"
     minCoverage: "lowest daily coverage {pct}%"
@@ -431,7 +442,7 @@ costReport:
       day_marked: Some days need a note on estimates
       all_ok: Every day passed the billing checks
     days: Daily seals
-    daysEmpty: No days sealed yet.
+    daysEmpty: "No day sealed yet. The first seal is made within an hour after the first full UTC day of data ends (after {time} the next day, local time)."
     col:
       day: Day
       total: Total

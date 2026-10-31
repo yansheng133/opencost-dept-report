@@ -9,7 +9,7 @@ import Help from '../Help.vue';
 import DeptTag from '../DeptTag.vue';
 import { useReportContext } from '../../composables/useReportContext';
 import { visibleParts, IDLE_COLOR, UNALLOCATED_COLOR } from '../../utils/scope';
-import { money, n4, share } from '../../utils/format';
+import { money, moneyCol, n4, share } from '../../utils/format';
 import type { Report } from '../../utils/types';
 
 export default defineComponent({
@@ -35,15 +35,31 @@ export default defineComponent({
       // The idle share is its own column so the row adds up: CPU + memory +
       // storage + shared idle = subtotal (without it a finance reader adds
       // the columns and the subtotal does not match).
-      .map((d) => ({ ...d, amount: props.idleShared ? d.shared : d.total, idleShare: props.idleShared ? d.shared - d.total : 0 })));
+      .map((d) => ({
+        ...d, amount: props.idleShared ? d.shared : d.total, idleShare: props.idleShared ? d.shared - d.total : 0
+      })));
     const sum = computed(() => rows.value.reduce((s, r) => s + r.amount, 0));
     const idleSum = computed(() => rows.value.reduce((s, r) => s + r.idleShare, 0));
+    // One decimal count per column (its total included).
+    const cols = computed(() => {
+      const r = rows.value;
+
+      return {
+        cpu:    moneyCol(r.map((x) => x.cpu)),
+        ram:    moneyCol(r.map((x) => x.ram)),
+        pv:     moneyCol(r.map((x) => x.pv)),
+        idle:   moneyCol([...r.map((x) => x.idleShare), idleSum.value]),
+        amount: moneyCol([...r.map((x) => x.amount), sum.value]),
+        month:  moneyCol([...r.map((x) => x.amount * props.month), sum.value * props.month]),
+      };
+    });
     // Departments are compared with each other on their own scale; idle and
     // unallocated (often far larger) go below a divider on another scale,
     // or the departments shrink to a few pixels each.
     const bars = computed<BarRow[]>(() => {
       const { t, depts } = ctx.value;
       const total = props.report.total;
+
       return rows.value.map((r) => ({
         key:   r.id,
         label: depts.name(r.id),
@@ -79,7 +95,20 @@ export default defineComponent({
     const rate = (v: number | null) => (v === null || v === undefined ? '—' : String(v));
 
     return {
-      ctx, rows, sum, idleSum, bars, otherBars, money, n4, rate, summary: computed(() => ctx.value.t('costReport.dept.summary', { amount: money(sum.value), currency: ctx.value.currency, count: rows.value.length })), cur: (label: string) => ctx.value.t('costReport.common.inCurrency', { label, currency: ctx.value.currency })
+      ctx,
+      rows,
+      sum,
+      idleSum,
+      cols,
+      bars,
+      otherBars,
+      money,
+      n4,
+      rate,
+      summary: computed(() => ctx.value.t('costReport.dept.summary', {
+        amount: money(sum.value), currency: ctx.value.currency, count: rows.value.length
+      })),
+      cur: (label: string) => ctx.value.t('costReport.common.inCurrency', { label, currency: ctx.value.currency })
     };
   },
 });
@@ -173,31 +202,31 @@ export default defineComponent({
               {{ n4(r.cpuCoreHours) }}
             </td>
             <td class="cr-num">
-              {{ money(r.cpu) }}
+              {{ cols.cpu(r.cpu) }}
             </td>
             <td class="cr-num">
               {{ n4(r.ramGiBHours) }}
             </td>
             <td class="cr-num">
-              {{ money(r.ram) }}
+              {{ cols.ram(r.ram) }}
             </td>
             <td class="cr-num">
-              {{ money(r.pv) }}
+              {{ cols.pv(r.pv) }}
             </td>
             <td
               v-if="idleShared"
               class="cr-num"
             >
-              {{ money(r.idleShare) }}
+              {{ cols.idle(r.idleShare) }}
             </td>
             <td class="cr-num">
-              {{ money(r.amount) }}
+              {{ cols.amount(r.amount) }}
             </td>
             <td
               class="cr-num"
               :class="{ 'cr-thin': thin }"
             >
-              {{ money(r.amount * month) }}
+              {{ cols.month(r.amount * month) }}
             </td>
           </tr>
         </tbody>
@@ -209,16 +238,16 @@ export default defineComponent({
               v-if="idleShared"
               class="cr-num"
             >
-              {{ money(idleSum) }}
+              {{ cols.idle(idleSum) }}
             </td>
             <td class="cr-num">
-              {{ money(sum) }}
+              {{ cols.amount(sum) }}
             </td>
             <td
               class="cr-num"
               :class="{ 'cr-thin': thin }"
             >
-              {{ money(sum * month) }}
+              {{ cols.month(sum * month) }}
             </td>
           </tr>
         </tfoot>

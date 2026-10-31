@@ -16,6 +16,9 @@ export const REQUEST_TIMEOUT_MS = 60 * 1000;
 // again on the same beat while it is open.
 export const REFRESH_INTERVAL_MS = 60 * 1000;
 
+// A typed date must stay this long before it changes the period.
+export const DAY_SETTLE_MS = 500;
+
 // Below this the coverage banner is shown (the backend's gate decides
 // what the number means for billing; this only decides when to warn).
 export const COVERAGE_WARN_PCT = 99.5;

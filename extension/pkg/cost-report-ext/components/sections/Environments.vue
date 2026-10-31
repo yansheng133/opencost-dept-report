@@ -7,7 +7,7 @@ import CrSection from '../CrSection.vue';
 import Bars, { BarRow } from '../Bars.vue';
 import { useReportContext } from '../../composables/useReportContext';
 import { filterEnv } from '../../utils/scope';
-import { money, share } from '../../utils/format';
+import { money, moneyCol, share } from '../../utils/format';
 import type { Report } from '../../utils/types';
 
 export default defineComponent({
@@ -43,7 +43,7 @@ export default defineComponent({
             return;
           }
           out.push({
-            key: `${ r.dept }/${ e }`, label: `${ depts.name(r.dept) } ${ e }`, color: depts.color(r.dept), value: v, hatch: i > 0, note: v ? '' : t('costReport.env.none')
+            key: `${ r.dept }/${ e }`, label: `${ depts.name(r.dept) } ${ e }`, color: depts.color(r.dept), value: v, hatch: i > 0
           });
         });
         if (r.other) {
@@ -66,7 +66,22 @@ export default defineComponent({
     });
 
     return {
-      ctx, rows, bars, note, summary: computed(() => ctx.value.t('costReport.env.summary', { count: envs.value.length }))
+      ctx,
+      rows,
+      bars,
+      note,
+      summary: computed(() => {
+        // Amount per environment, e.g. "prod 0.60 · dev 0.20 TWD".
+        const per: [string, number][] = envs.value.map((e) => [e, rows.value.reduce((s, r) => s + (r.envs?.[e] || 0), 0)]);
+        const other = rows.value.reduce((s, r) => s + (r.other || 0), 0);
+
+        if (other) {
+          per.push([ctx.value.t('costReport.env.other'), other]);
+        }
+        const fmt = moneyCol(per.map(([, v]) => v));
+
+        return ctx.value.t('costReport.env.summary', { list: per.map(([e, v]) => `${ e } ${ fmt(v) }`).join(' · '), currency: ctx.value.currency });
+      })
     };
   },
 });

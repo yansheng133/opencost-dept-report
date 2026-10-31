@@ -5,7 +5,7 @@ import { defineComponent, PropType, computed } from 'vue';
 import CrSection from '../CrSection.vue';
 import Help from '../Help.vue';
 import { useReportContext } from '../../composables/useReportContext';
-import { money } from '../../utils/format';
+import { money, moneyCol } from '../../utils/format';
 import type { Report } from '../../utils/types';
 
 type Key = 'cpu' | 'ram' | 'storage';
@@ -15,11 +15,17 @@ export default defineComponent({
 
   components: { CrSection, Help },
 
-  props: { report: { type: Object as PropType<Report>, required: true } },
+  props: {
+    report: { type: Object as PropType<Report>, required: true },
+    // Usage and amounts follow the department filter; prices are global.
+    filter: { type: String, default: 'all' },
+  },
 
   setup(props) {
     const ctx = useReportContext();
-    const sum = (k: 'cpuCoreHours' | 'ramGiBHours' | 'pvGiBHours' | 'cpu' | 'ram' | 'pv') => props.report.depts.reduce((s, d) => s + (d[k] || 0), 0);
+    const sum = (k: 'cpuCoreHours' | 'ramGiBHours' | 'pvGiBHours' | 'cpu' | 'ram' | 'pv') => props.report.depts
+      .filter((d) => props.filter === 'all' || d.id === props.filter)
+      .reduce((s, d) => s + (d[k] || 0), 0);
     const rows = computed(() => {
       const { t } = ctx.value;
       const check = props.report.rateCard?.check || {};
@@ -40,12 +46,15 @@ export default defineComponent({
       };
       const r = props.report.rates;
 
-      return ([
+      const list = ([
         ['cpu', r.cpu, t('costReport.rates.usageCpu', { v: sum('cpuCoreHours').toFixed(4) }), sum('cpu')],
         ['ram', r.ram, t('costReport.rates.usageGiB', { v: sum('ramGiBHours').toFixed(4) }), sum('ram')],
         ['storage', r.storage, t('costReport.rates.usageGiB', { v: sum('pvGiBHours').toFixed(4) }), sum('pv')],
-      ] as [Key, number | null, string, number][]).map(([k, rate, usage, amount]) => ({
-        k, rate: rate === null || rate === undefined ? '—' : String(rate), usage, amount: money(amount), mark: mark(k)
+      ] as [Key, number | null, string, number][]);
+      const fmt = moneyCol(list.map((x) => x[3]));
+
+      return list.map(([k, rate, usage, amount]) => ({
+        k, rate: rate === null || rate === undefined ? '—' : String(rate), usage, amount: fmt(amount), mark: mark(k)
       }));
     });
     const card = computed(() => {
@@ -92,7 +101,6 @@ export default defineComponent({
     :title="ctx.t('costReport.rates.title')"
     :description="ctx.t('costReport.rates.description')"
     :summary="summary"
-    cluster-wide
   >
     <div class="cr-card-info">
       <p
@@ -121,7 +129,7 @@ export default defineComponent({
             </th>
             <th>
               <Help
-                :text="ctx.t('costReport.rates.col.usage')"
+                :text="filter === 'all' ? ctx.t('costReport.rates.col.usage') : ctx.t('costReport.rates.col.usageDept', { name: ctx.depts.name(filter) })"
                 :tip="ctx.t('costReport.help.usage')"
               />
             </th>

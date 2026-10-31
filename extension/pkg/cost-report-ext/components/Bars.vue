@@ -3,7 +3,7 @@
 // are the ones that are not a department's own cost (idle, other
 // environments). The value and its note are text, not only the bar.
 import { defineComponent, PropType, computed } from 'vue';
-import { money } from '../utils/format';
+import { moneyCol } from '../utils/format';
 
 export interface BarRow {
   key: string;
@@ -22,9 +22,12 @@ export default defineComponent({
 
   setup(props) {
     const max = computed(() => Math.max(...props.rows.map((r) => r.value), 0.0001));
-    const width = (v: number) => `${ Math.max(v / max.value * 100, 0.6) }%`;
+    // Zero draws nothing: a sliver would read as "a little".
+    const width = (v: number) => (v > 0 ? `${ Math.max(v / max.value * 100, 0.6) }%` : '0');
+    // One decimal count for the whole list.
+    const fmt = computed(() => moneyCol(props.rows.map((r) => r.value)));
 
-    return { width, money };
+    return { width, fmt };
   },
 });
 </script>
@@ -42,18 +45,22 @@ export default defineComponent({
           class="cr-swatch"
           :style="{ background: r.color }"
         />
-        <span :title="r.label">{{ r.label }}</span>
+        <span
+          class="cr-bar-label"
+          :title="r.label"
+        >{{ r.label }}</span>
       </div>
       <div class="cr-bar-track">
         <div
+          v-if="r.value > 0"
           class="cr-bar-fill"
           :class="{ hatch: r.hatch }"
           :style="{ width: width(r.value), background: r.color }"
         />
       </div>
       <div class="cr-bar-val cr-num">
-        {{ money(r.value) }}<span
-          v-if="r.note"
+        {{ fmt(r.value) }}<span
+          v-if="r.note && r.value > 0"
           class="text-muted cr-gap-l"
         >{{ r.note }}</span>
       </div>

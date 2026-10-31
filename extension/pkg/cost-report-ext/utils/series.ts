@@ -72,6 +72,36 @@ export function valueOf(p: SeriesPoint, id: string, metric: Metric): number | nu
 }
 
 /**
+ * Average utilisation (%) per department over the measured segments of a
+ * series, weighted by minutes. Segments without data do not count; a
+ * department with no value at all is left out (no request, no ratio).
+ */
+export function averages(s: Series | null | undefined, ids: string[], metric: Metric): { id: string; avg: number }[] {
+  const out: { id: string; avg: number }[] = [];
+
+  ids.forEach((id) => {
+    let sum = 0;
+    let w = 0;
+
+    (s?.points || []).forEach((p) => {
+      const v = valueOf(p, id, metric);
+
+      if (v !== null) {
+        const m = p.minutes || 1;
+
+        sum += v * m;
+        w += m;
+      }
+    });
+    if (w > 0) {
+      out.push({ id, avg: sum / w });
+    }
+  });
+
+  return out;
+}
+
+/**
  * Index of the last point if its segment has not ended yet (fewer minutes
  * than the step and its end still in the future), else -1. A past day's
  * last segment with few minutes is missing data, not unfinished.

@@ -10,7 +10,7 @@ import { useReportContext } from '../../composables/useReportContext';
 import { filterStorage } from '../../utils/scope';
 import { storageNotes } from '../../utils/actions';
 import { storageNoteText } from '../../utils/describe';
-import { capRows, fmtBytes, money } from '../../utils/format';
+import { capRows, fmtBytes, money, moneyCol } from '../../utils/format';
 import { TABLE_LIMITS } from '../../config/backend';
 import type { Report } from '../../utils/types';
 
@@ -38,8 +38,11 @@ export default defineComponent({
       count: rows.value.length, amount: money(rows.value.reduce((s, r) => s + (r.cost || 0), 0)), currency: ctx.value.currency
     }));
 
+    const costCol = computed(() => moneyCol(rows.value.map((r) => r.cost)));
+    const idleCol = computed(() => moneyCol(rows.value.map((r) => r.idleCost)));
+
     return {
-      ctx, open, rows, shown, notes, special, fmtBytes, money, summary, limit: TABLE_LIMITS.storage
+      ctx, open, rows, shown, notes, special, fmtBytes, money, costCol, idleCol, summary, limit: TABLE_LIMITS.storage
     };
   },
 });
@@ -131,10 +134,10 @@ export default defineComponent({
               />
             </td>
             <td class="cr-num">
-              {{ money(r.cost) }}
+              {{ costCol(r.cost) }}
             </td>
             <td class="cr-num">
-              {{ r.idleCost === null ? '—' : money(r.idleCost) }}
+              {{ r.idleCost === null ? '—' : idleCol(r.idleCost) }}
             </td>
           </tr>
           <tr v-if="!rows.length">
@@ -142,7 +145,7 @@ export default defineComponent({
               colspan="7"
               class="text-muted"
             >
-              {{ ctx.t('costReport.storage.empty') }}
+              {{ filter === 'all' ? ctx.t('costReport.storage.empty') : ctx.t('costReport.storage.emptyDept', { name: ctx.depts.name(filter) }) }}
             </td>
           </tr>
           <MoreRow

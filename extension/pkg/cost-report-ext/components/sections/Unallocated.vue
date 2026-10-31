@@ -18,7 +18,12 @@ export default defineComponent({
 
   components: { CrSection, Bars },
 
-  props: { report: { type: Object as PropType<Report>, required: true } },
+  props: {
+    report:     { type: Object as PropType<Report>, required: true },
+    // The namespace amounts exist only on the separate basis; with idle
+    // shared the section says so instead of silently disagreeing with the card.
+    idleShared: { type: Boolean, default: false },
+  },
 
   setup(props) {
     const ctx = useReportContext();
@@ -52,11 +57,11 @@ export default defineComponent({
 
       return top;
     });
-    const summary = computed(() => ctx.value.t('costReport.unalloc.summary', {
-      amount: money(props.report.unallocated?.separate || 0), pct: share(props.report.unallocated?.separate, props.report.total)
-    }));
+    const summary = computed(() => ctx.value.t('costReport.unalloc.summarySeparate', { amount: money(props.report.unallocated?.separate || 0), pct: share(props.report.unallocated?.separate, props.report.total) }));
 
-    return { ctx, bars, summary };
+    return {
+      ctx, bars, summary, money
+    };
   },
 });
 </script>
@@ -69,6 +74,12 @@ export default defineComponent({
     :summary="summary"
     cluster-wide
   >
+    <p
+      v-if="idleShared"
+      class="cr-small cr-warn"
+    >
+      {{ ctx.t('costReport.unalloc.basisSeparate', { shared: money(report.unallocated ? report.unallocated.shared : 0), separate: money(report.unallocated ? report.unallocated.separate : 0) }) }}
+    </p>
     <Bars :rows="bars" />
   </CrSection>
 </template>
