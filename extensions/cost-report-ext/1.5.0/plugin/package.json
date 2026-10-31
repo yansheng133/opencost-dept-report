@@ -1,0 +1,27 @@
+{
+  "name": "cost-report-ext",
+  "description": "Department cost allocation from OpenCost, with billing checks, usage trends and sealed billing periods",
+  "version": "1.5.0",
+  "private": false,
+  "rancher": true,
+  "engines": {
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "@vue/cli-plugin-babel": "5.0.9",
+    "@vue/cli-service": "5.0.8",
+    "@vue/cli-plugin-typescript": "5.0.9"
+  },
+  "homepage": "https://github.com/yansheng133/opencost-dept-report",
+  "keywords": [
+    "opencost",
+    "finops",
+    "chargeback",
+    "cost-allocation"
+  ],
+  "icon": "https://raw.githubusercontent.com/yansheng133/opencost-dept-report/v1.5.0/extension/pkg/cost-report-ext/assets/icon.svg",
+  "files": [
+    "**/*"
+  ],
+  "main": "cost-report-ext-1.5.0.umd.min.js"
+}
