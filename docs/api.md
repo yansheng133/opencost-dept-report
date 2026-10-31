@@ -112,6 +112,9 @@ Rancher 的角色範本見 `deploy/rancher/`。
 - `storage.rows[].depts[]` 是 `{ "id", "cost", "special" }`，`special` 是 `null`、`unallocated`、`unmounted` 或 `idle`（取代舊版的中文標籤）。
 - `ccEnv[]` 的環境欄位改成 `{ "dept": "rd", "envs": { "prod": 1.2, "dev": 0.4 }, "other": 0.1 }`，環境值由 `labels.environments` 決定，不再寫死 prod／dev。
 - `unallocRows[].system` 依 chart 的 `systemNamespaces` 判斷。
+- `reconciliation` 多了 `allocatedMinutes`、`assetsMinutes`。兩邊涵蓋的時間差超過 1% 時，`assets` 是換算成分攤時間長度後的金額，
+  `assetsMeasured` 是 OpenCost 原本的數字，`scaled` 是 `true`。資產成本 ≤ 0（OpenCost 剛啟動時會出現）或讀不到時，
+  `status` 是 `unknown`，`reason` 是 `assets_not_positive` 或 `assets_unavailable`。
 - 外層的 `generatedAt`、`ageSeconds`、`ttlSeconds`、`stale`、`staleReason`、`windows` 不變。
 
 ### `GET series?window=24h&step=5m`（list）

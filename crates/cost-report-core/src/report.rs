@@ -171,13 +171,23 @@ pub fn declared_fill(gaps: &[(String, String, GapAnswer)], rates: &Rates) -> Opt
     }))
 }
 
+/// Asset cost (nodes, disks) of a window, for reconciliation.
+#[derive(Debug, Clone, Default)]
+pub struct Assets {
+    pub total: f64,
+    pub by_type: Map<String, Value>,
+    /// Minutes the node assets actually cover; OpenCost often covers less
+    /// of the window for assets than for allocations.
+    pub minutes: Option<f64>,
+}
+
 /// Everything besides the allocations, gathered by the server.
 #[derive(Debug, Clone, Default)]
 pub struct Extras {
     pub coverage: Option<Value>,
     pub fill: Option<Value>,
     /// Asset cost total and by type.
-    pub assets: Option<(f64, Map<String, Value>)>,
+    pub assets: Option<Assets>,
     pub targets: Option<Vec<Value>>,
     pub series: Option<Value>,
     pub storage: Value,
@@ -348,7 +358,27 @@ pub fn assemble(
         0.0
     };
 
-    let recon_base = billing::reconcile(total, x.assets.as_ref().map(|(t, _)| *t), &cfg.thresholds);
+    // Compare like with like: when OpenCost priced the nodes over a shorter
+    // span than it allocated (it does, right after it starts and at the
+    // edges of a window), the asset cost is scaled to the allocation's
+    // minutes. Comparing totals then reported +117 % drift that was only
+    // 4 minutes of assets against 9 of allocation.
+    let asset_minutes = x
+        .assets
+        .as_ref()
+        .and_then(|a| a.minutes)
+        .filter(|m| *m > 0.0);
+    let scaled = match (x.assets.as_ref(), asset_minutes) {
+        (Some(a), Some(am)) if minutes > 0.0 && ((am - minutes) / minutes).abs() > 0.01 => {
+            Some(a.total * minutes / am)
+        }
+        _ => None,
+    };
+    let recon_base = billing::reconcile(
+        total,
+        scaled.or(x.assets.as_ref().map(|a| a.total)),
+        &cfg.thresholds,
+    );
     // The share of each resource in the cost: a resource with tiny cost
     // has an unreliable implied price and must not block the bill.
     let cost_by: Vec<(&str, f64)> = [
@@ -395,8 +425,15 @@ pub fn assemble(
     recon["byType"] = json!(x
         .assets
         .as_ref()
-        .map(|(_, b)| b.clone())
+        .map(|a| a.by_type.clone())
         .unwrap_or_default());
+    recon["allocatedMinutes"] = json!(round(minutes, 1));
+    recon["assetsMinutes"] = json!(asset_minutes.map(|m| round(m, 1)));
+    if let (Some(s), Some(a)) = (scaled, x.assets.as_ref()) {
+        recon["assetsMeasured"] = json!(r4(a.total));
+        recon["assets"] = json!(r4(s));
+        recon["scaled"] = json!(true);
+    }
 
     json!({
         "window": { "query": window, "start": w_start, "end": w_end, "minutes": round(minutes, 1) },
@@ -586,6 +623,35 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn assets_covering_less_time_are_scaled() {
+        // Assets cover 720 of the 1440 minutes: 50 there is 100 over the day.
+        let x = Extras {
+            assets: Some(Assets {
+                total: 50.0,
+                minutes: Some(720.0),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let r = assemble(&cfg(), &alloc(), "24h", None, &x);
+        assert_eq!(r["reconciliation"]["assets"], 100.0);
+        assert_eq!(r["reconciliation"]["assetsMeasured"], 50.0);
+        assert_eq!(r["reconciliation"]["scaled"], true);
+        assert_eq!(r["reconciliation"]["status"], "ok");
+        // Same span: not scaled.
+        let x = Extras {
+            assets: Some(Assets {
+                total: 100.0,
+                minutes: Some(1440.0),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let r = assemble(&cfg(), &alloc(), "24h", None, &x);
+        assert!(r["reconciliation"].get("scaled").is_none());
+    }
+
+    #[test]
     fn rate_card_and_reconciliation_feed_the_gate() {
         let card = RateCard::parse(
             r#"{"versions":[{"effective":"2026-01-01","cpu":1.0,"ram":0.25,"storage":0.001}]}"#,
@@ -593,7 +659,11 @@ pub(crate) mod tests {
         .unwrap();
         let x = Extras {
             coverage: Some(json!({"pct": 99.8})),
-            assets: Some((100.0, Map::new())),
+            assets: Some(Assets {
+                total: 100.0,
+                minutes: Some(1440.0),
+                ..Default::default()
+            }),
             ..Default::default()
         };
         let r = assemble(&cfg(), &alloc(), "24h", Some(&card), &x);

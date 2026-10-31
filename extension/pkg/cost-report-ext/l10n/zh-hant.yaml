@@ -291,6 +291,7 @@ costReport:
     recon: 對帳
     reconNote: "分攤總額 {allocated} vs 資產成本 {assets}（{byType}）。對帳要用含閒置的總額。"
     reconUnknown: 讀不到資產成本，無法對帳
+    reconScaled: "OpenCost 替節點計價涵蓋 {assetsMinutes} 分鐘、分攤涵蓋 {minutes} 分鐘，所以資產成本 {measured} 已換算成同樣長度再比。"
     reconNotPositive: "OpenCost 回報的資產成本是 {assets}，還不是有效的成本（它還沒替節點計價，剛啟動的幾分鐘常見），無法對帳。"
     fillNotes: 補值的問題
     fillNotesValue: "{count} 則"

@@ -194,6 +194,12 @@ export interface Reconciliation {
   status: Status;
   // Why it is unknown: no asset data, or an asset total of zero or below.
   reason?: 'assets_unavailable' | 'assets_not_positive';
+  // Minutes each side covers; when they differ, assets is scaled to the
+  // allocation's minutes and assetsMeasured is OpenCost's own figure.
+  allocatedMinutes?: number;
+  assetsMinutes?: number | null;
+  assetsMeasured?: number;
+  scaled?: boolean;
   byType?: Record<string, number>;
 }
 

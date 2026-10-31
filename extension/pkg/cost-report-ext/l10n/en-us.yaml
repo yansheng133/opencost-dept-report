@@ -291,6 +291,7 @@ costReport:
     recon: Reconciliation
     reconNote: "Allocated {allocated} vs asset cost {assets} ({byType}). Reconcile with idle included."
     reconUnknown: Asset cost unavailable; cannot reconcile
+    reconScaled: " OpenCost priced the nodes over {assetsMinutes} min but allocated {minutes} min, so its asset cost {measured} is scaled to the same span."
     reconNotPositive: "OpenCost reports asset cost {assets}, which is not a cost yet (it has not priced the nodes; usual for a few minutes after it starts). Cannot reconcile."
     fillNotes: Problems filling gaps
     fillNotesValue: "{count}"

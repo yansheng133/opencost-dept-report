@@ -114,11 +114,10 @@ impl OpenCost {
             .ok_or_else(|| UpstreamError::Invalid("OpenCost returned no segments".into()))
     }
 
-    /// Asset cost (nodes, disks) total and by type, for reconciliation.
-    pub fn assets(
-        &self,
-        window: &str,
-    ) -> Result<(f64, serde_json::Map<String, Value>), UpstreamError> {
+    /// Asset cost (nodes, disks) total and by type, and the minutes the
+    /// nodes cover, for reconciliation.
+    pub fn assets(&self, window: &str) -> Result<cost_report_core::report::Assets, UpstreamError> {
+        use cost_report_core::num::{field, r4};
         let body = self.0.get_json(
             "/assets",
             &[
@@ -133,6 +132,7 @@ impl OpenCost {
             other => other,
         };
         let mut by_type = serde_json::Map::new();
+        let mut node_minutes: Option<f64> = None;
         for v in items.as_object().into_iter().flatten().map(|(_, v)| v) {
             let t = v
                 .get("type")
@@ -140,14 +140,20 @@ impl OpenCost {
                 .filter(|s| !s.is_empty())
                 .unwrap_or("other");
             let prev = by_type.get(t).and_then(Value::as_f64).unwrap_or(0.0);
-            let cost = cost_report_core::num::field(v, "totalCost");
             by_type.insert(
                 t.into(),
-                serde_json::json!(cost_report_core::num::r4(prev + cost)),
+                serde_json::json!(r4(prev + field(v, "totalCost"))),
             );
+            if t == "Node" {
+                node_minutes = Some(node_minutes.unwrap_or(0.0).max(field(v, "minutes")));
+            }
         }
         let total = by_type.values().filter_map(Value::as_f64).sum();
-        Ok((cost_report_core::num::r4(total), by_type))
+        Ok(cost_report_core::report::Assets {
+            total: r4(total),
+            by_type,
+            minutes: node_minutes,
+        })
     }
 }
 

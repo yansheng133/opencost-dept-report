@@ -127,7 +127,7 @@ fn upstream() -> (String, Seen) {
                     _ => (400, "{}".into()),
                 }
             }
-            "/assets" => ok(json!({"node-1": {"type": "Node", "totalCost": 100.0}})),
+            "/assets" => ok(json!({"node-1": {"type": "Node", "totalCost": 100.0, "minutes": 1440.0}})),
             "/api/v1/targets" => (200, json!({"status": "success", "data": {"activeTargets": [
                 {"labels": {"job": "opencost"}, "scrapeInterval": "60s"}]}}).to_string()),
             "/api/v1/query_range" => {
