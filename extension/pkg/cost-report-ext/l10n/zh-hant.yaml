@@ -34,7 +34,7 @@ costReport:
     bad_step: 這個區間不能選這個取樣間隔。
     no_department: 你沒有任何部門的權限。
     not_found: 找不到這份資料。
-    series_budget: "OpenCost 剛跑完大的查詢，請 {seconds} 秒後再試。連續的大查詢會讓它連不上 Prometheus，連帳務報表都會查不到。"
+    series_budget: "OpenCost 剛處理完大量查詢，{seconds} 秒後再試。"
     upstream: OpenCost 這次沒有回傳這段期間的資料（可能正忙），請過一分鐘再試。
     not_ready: 後端還沒成功從 OpenCost 取得過資料。
     unauthenticated: 請求沒有經過 Kubernetes API server，後端無法確認你的身分。
@@ -207,6 +207,7 @@ costReport:
       invalid: "這不是完整的日期。"
       before: "最早的資料在 {min}，請選這一天或之後。"
       after: "不能選未來的日子（今天是 {max}，UTC）。"
+      only: "只有 {min} 有資料。"
   usage:
     title: 各部門的使用率趨勢
     description: 使用率 = 實際用量 ÷ 申請量。金額看付了多少，使用率看申請的有沒有在用。
@@ -220,8 +221,8 @@ costReport:
     stepFailed: "取不到每 {step}一個點的資料：{error}。目前顯示的仍是每 {current}一個點。"
     none: 這個區間取不到分段資料（OpenCost 的分段查詢失敗，或這個區間還沒有樣本）。
     noTimes: 分段資料沒有可用的時間。
-    note: "每 {step}一個點，共 {count} 個點；時間是你這台電腦的時區（{zone}）。"
-    missing: "有 {count} 個時段沒有資料，折線在那裡是斷開的。"
+    note: "每 {step}一個點，共 {count} 點；時間是這台電腦的時區（{zone}）。"
+    missing: "{count} 段沒有資料，折線在那裡斷開。"
     partial: "虛線的段落沒有涵蓋完整的取樣間隔，數字會偏低。"
     tipFrom: "{start} 起 {minutes} 分鐘"
     tipNoData: 這個時段沒有量到資料
@@ -235,6 +236,8 @@ costReport:
       ram: "平均記憶體使用率：{list}"
     summaryNone: "這段期間沒有使用率資料"
     missingSingle: "{count} 段沒有資料，只有一個點，所以沒有連線。"
+    waitStep: "{step}：{seconds} 秒後可用"
+    missingEdge: "{count} 段沒有資料（在資料開始之前或結束之後）。"
   env:
     title: 各環境的成本
     description: "同一批工作負載再用 {label} 標籤切一次。"
@@ -387,7 +390,7 @@ costReport:
     effectiveNoPromNoReason: "連不上 Prometheus，沒有收到錯誤原因"
     summary: "實際涵蓋率 {pct}"
     summaryUnknown: "涵蓋率無法判斷"
-    reconNoteScaled: "分攤總額 {allocated} vs 資產成本 {measured}（{byType}）。OpenCost 替節點計價只涵蓋 {assetsMinutes} 分鐘，換算成分攤的 {minutes} 分鐘＝{assets}。對帳要用含閒置的總額。"
+    reconNoteScaled: "分攤總額 {allocated} vs 資產成本 {assets}（OpenCost 替節點計價 {assetsMinutes} 分鐘的 {measured}，換算成 {minutes} 分鐘；{byType}）。對帳要用含閒置的總額。"
     listSep: "、"
     targetChanged: "目標數有變動（{min}～{max}）"
     edgeList: "資料開頭／結尾"

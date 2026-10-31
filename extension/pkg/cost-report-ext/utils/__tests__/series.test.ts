@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
 import {
-  averages, buildChart, partialIndex, spreadLabels, timeTicks, tickInterval, timedPoints, valueOf, wantedStep, nearestPoint, xOf, BOX
+  averages, emptySegments, buildChart, partialIndex, spreadLabels, timeTicks, tickInterval, timedPoints, valueOf, wantedStep, nearestPoint, xOf, BOX
 } from '../series';
 import type { Series, SeriesPoint } from '../types';
 
@@ -182,5 +182,13 @@ describe('timeTicks', () => {
 
     expect(hour.map((tk) => new Date(tk.start).getMinutes() % 10)).toStrictEqual(hour.map(() => 0));
     expect(timeTicks(t0, t0 + 864e5, 2 * 3600e3).length).toBe(12);
+  });
+});
+
+describe('emptySegments', () => {
+  it('only gaps between points with data break the line', () => {
+    expect(emptySegments(series([pt(0, null), pt(10, null), pt(20, 0.5), pt(30, null), pt(40, 0.5), pt(50, null)]))).toStrictEqual({ inner: 1, outer: 3 });
+    expect(emptySegments(series([pt(0, null), pt(10, 0.5)]))).toStrictEqual({ inner: 0, outer: 1 });
+    expect(emptySegments(series([pt(0, null)]))).toStrictEqual({ inner: 0, outer: 1 });
   });
 });

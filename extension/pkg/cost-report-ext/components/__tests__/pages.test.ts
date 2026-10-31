@@ -218,6 +218,44 @@ describe('部門成本', () => {
     w.unmount();
   });
 
+  it('the date hint goes away when the reader moves on: another window, or a valid date typed', async() => {
+    serve({
+      [GV]: [200, {}], [`${ GV }/config`]: [200, { ...config, dataSince: '2026-09-21T10:27:00Z' }], [`${ GV }/reports`]: [200, report()]
+    });
+    const w = await mountPage('Report');
+    const reject = async() => {
+      const input = w.find('input[type="date"]');
+      const el = input.element as HTMLInputElement;
+
+      await input.trigger('focus');
+      await input.trigger('keydown', { key: '2' });
+      el.value = '2026-01-01';
+      await input.trigger('input');
+      await input.trigger('keydown', { key: 'Enter' });
+      expect(w.find('.cr-day-hint').exists()).toBe(true);
+
+      return { input, el };
+    };
+
+    // Picking a window.
+    await reject();
+    await w.find('input[name="cr-window"][value="1h"]').setValue(true);
+    expect(w.find('.cr-day-hint').exists()).toBe(false);
+    expect(w.find('input[type="date"]').attributes('aria-invalid')).toBeUndefined();
+    // Typing a usable date.
+    const { input, el } = await reject();
+
+    el.value = '2026-09-22';
+    await input.trigger('input');
+    expect(w.find('.cr-day-hint').exists()).toBe(false);
+    // Changing the department filter.
+    await reject();
+    await w.find('#dept').exists();
+    await w.find('input[type="radio"][value="rd"]').setValue(true);
+    expect(w.find('.cr-day-hint').exists()).toBe(false);
+    w.unmount();
+  });
+
   it('a table inside a scrolling wrapper does not get a sticky header (CSS contract)', async() => {
     // jsdom has no layout, so the rule itself is checked: a sticky header in
     // a scrolling wrapper sticks to the wrapper and covered the totals row.
@@ -276,7 +314,7 @@ describe('部門成本', () => {
     w.unmount();
   });
 
-  it('a chosen step is asked from series; 429 keeps the current chart', async() => {
+  it('a chosen step is asked from series; 429 keeps it pending with a countdown', async() => {
     mockQuery = { step: '10m' };
     const asked = serve({
       [GV]: [200, {}], [`${ GV }/config`]: [200, config], [`${ GV }/reports`]: [200, report()], [`${ GV }/series`]: [429, { kind: 'Status', error: { code: 'series_budget', retryAfterSeconds: 12 } }]
@@ -284,7 +322,12 @@ describe('部門成本', () => {
     const w = await mountPage('Report');
 
     expect(asked.some((u) => u.includes('/series?window=24h&step=10m') || u.includes('/series?step=10m'))).toBe(true);
-    expect(w.html()).toContain('costReport.errors.series_budget{\\"seconds\\":12}');
+    // Refused for now: the chosen step stays pending with a countdown, no jump back.
+    const usageText = w.find('#usage').text();
+
+    expect(usageText).toContain('costReport.usage.waitStep');
+    expect(usageText).toContain('"seconds":12');
+    expect((w.find('#usage input[type="radio"][value="10m"]').element as HTMLInputElement).checked).toBe(true);
     expect(w.findAll('#usage path.cr-path').length).toBeGreaterThanOrEqual(2);
     w.unmount();
   });

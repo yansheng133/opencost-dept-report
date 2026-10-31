@@ -867,10 +867,21 @@ $cr-under: #6f8fb5;
   position: relative;
 }
 
+// Under the field, one line, out of the toolbar's flow so the sticky bar
+// keeps its height (inline, it made the toolbar wrap to a third line). It
+// is shown only while the rejected value is what the reader is looking at.
 .cr-day-hint {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 6;
+  margin-top: 2px;
+  padding: 1px 6px;
   font-size: 12px;
   white-space: nowrap;
   color: var(--warning, #c90);
+  background: var(--body-bg);
+  border-radius: var(--border-radius, 4px);
 }
 
 .cr-date[aria-invalid='true'] {

@@ -29,6 +29,8 @@ pub const STEPS: [(&str, f64); 8] = [
 ];
 pub const MIN_STEP_MINUTES: f64 = 5.0;
 pub const MAX_POINTS: f64 = 288.0;
+/// Segments a query may always use, whatever the budget has left.
+pub const SMALL_QUERY: f64 = 48.0;
 
 pub fn step_minutes(step: &str) -> Option<f64> {
     STEPS.iter().find(|(s, _)| *s == step).map(|(_, m)| *m)
@@ -136,8 +138,10 @@ impl Budget {
         }
         let used: f64 = spent.iter().map(|(_, k)| k).sum();
         // The first query always passes: whether one query is sensible is
-        // the whitelist's call, not this one's.
-        if used > 0.0 && used + n > self.limit {
+        // the whitelist's call, not this one's. Small ones always pass too:
+        // a day at 1 h (24 segments) was refused right after a day at 5 min,
+        // and it is the fine queries that exhaust connections.
+        if used > 0.0 && n > SMALL_QUERY && used + n > self.limit {
             let (mut free, mut wait) = (self.limit - used, 0.0);
             for (t, k) in spent.iter() {
                 free += k;
@@ -194,9 +198,12 @@ mod tests {
         let wait = b.try_take(288.0, 10.0).unwrap_err();
         assert_eq!(wait, 50);
         assert!(b.try_take(288.0, 60.0).is_ok());
+        // A coarse step right after a fine one is not refused.
+        assert!(b.try_take(24.0, 61.0).is_ok());
         // A first oversized query still passes.
         let b = Budget::new(100.0, 60.0);
         assert!(b.try_take(288.0, 0.0).is_ok());
-        assert!(b.try_take(1.0, 1.0).is_err());
+        assert!(b.try_take(1.0, 1.0).is_ok());
+        assert!(b.try_take(49.0, 1.0).is_err());
     }
 }

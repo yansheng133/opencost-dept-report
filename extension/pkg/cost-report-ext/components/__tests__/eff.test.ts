@@ -1,9 +1,7 @@
 /**
  * @jest-environment jsdom
  */
-import {
-  describe, it, expect, jest
-} from '@jest/globals';
+import { describe, it, expect, jest } from '@jest/globals';
 import { mount } from '@vue/test-utils';
 import Eff from '../Eff.vue';
 

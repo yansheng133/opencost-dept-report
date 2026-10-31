@@ -4,14 +4,14 @@
 // is kept in the address (?step=) so a shared link shows the same chart,
 // and kept across the page's refresh every minute.
 import {
-  defineComponent, PropType, computed, ref, watch
+  defineComponent, PropType, computed, ref, watch, onBeforeUnmount
 } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import CrSection from '../CrSection.vue';
 import { useReportContext } from '../../composables/useReportContext';
 import { getSeries, ApiError, errorText as apiErrorText } from '../../utils/api';
 import {
-  averages, buildChart, nearestPoint, pathOf, valueOf, wantedStep, xOf, BOX, Metric
+  averages, buildChart, emptySegments, nearestPoint, pathOf, valueOf, wantedStep, xOf, BOX, Metric
 } from '../../utils/series';
 import {
   fmtCores, fmtLocal, pctValue, stepParts, timeZone
@@ -67,9 +67,38 @@ export default defineComponent({
       router.replace({ query }).catch(() => undefined);
     }
 
+    // A step refused because OpenCost is busy (429) stays chosen with a
+    // countdown and is asked again when it runs out; picking another step
+    // cancels the wait.
+    const waiting = ref(0);
+    let countdown: ReturnType<typeof setInterval> | null = null;
+
+    function stopWaiting() {
+      if (countdown) {
+        clearInterval(countdown);
+        countdown = null;
+      }
+      waiting.value = 0;
+    }
+    onBeforeUnmount(stopWaiting);
+
+    function waitThenRetry(step: string, seconds: number) {
+      stopWaiting();
+      pending.value = step;
+      waiting.value = Math.max(1, Math.ceil(seconds));
+      countdown = setInterval(() => {
+        waiting.value--;
+        if (waiting.value <= 0) {
+          stopWaiting();
+          load(step);
+        }
+      }, 1000);
+    }
+
     async function load(step: string) {
       const base = props.report.series;
 
+      stopWaiting();
       failure.value = '';
       if (!base || step === series.value?.step) {
         return;
@@ -94,7 +123,9 @@ export default defineComponent({
           setStepInRoute(step, base.defaultStep);
         }
       } catch (e) {
-        if (mine === seq) {
+        if (mine === seq && e instanceof ApiError && e.code === 'series_budget') {
+          waitThenRetry(step, e.retryAfterSeconds ?? 10);
+        } else if (mine === seq) {
           failure.value = ctx.value.t('costReport.usage.stepFailed', {
             step: stepText(step), error: errorText(e), current: stepText(series.value?.step || base.step)
           });
@@ -125,7 +156,8 @@ export default defineComponent({
     const ids = computed(() => props.report.depts.map((d) => d.id).filter((id) => props.filter === 'all' || id === props.filter));
     // A single day is labelled every 2 h; other periods pick by length.
     const chart = computed(() => (series.value ? buildChart(series.value, ids.value, metric.value, Date.now(), props.view.day ? 2 * 3600 * 1000 : undefined) : null));
-    const missing = computed(() => (series.value ? series.value.expected - series.value.covered : 0));
+    // Real breaks (between points) and empty segments outside the data.
+    const gaps = computed(() => emptySegments(series.value));
     const tip = computed(() => {
       const c = chart.value;
 
@@ -172,7 +204,7 @@ export default defineComponent({
     });
 
     return {
-      summary, pctValue, fmtCores, ctx, metric, series, busy, pending, failure, chart, missing, tip, hover, move, load, stepText, pathOf, fmtLocal, BOX, zone: timeZone()
+      summary, pctValue, fmtCores, ctx, metric, series, busy, waiting, pending, failure, chart, gaps, tip, hover, move, load, stepText, pathOf, fmtLocal, BOX, zone: timeZone()
     };
   },
 });
@@ -211,7 +243,7 @@ export default defineComponent({
             type="radio"
             name="cr-step"
             :value="o"
-            :checked="o === (busy ? pending : series.step)"
+            :checked="o === (busy || waiting ? pending : series.step)"
             :disabled="busy"
             @change="load(o)"
           > {{ stepText(o) }}</label>
@@ -414,6 +446,13 @@ export default defineComponent({
       {{ ctx.t('costReport.usage.loadingStep', { step: stepText(pending) }) }}
     </p>
     <p
+      v-if="waiting"
+      class="text-muted cr-small"
+      role="status"
+    >
+      {{ ctx.t('costReport.usage.waitStep', { step: stepText(pending), seconds: waiting }) }}
+    </p>
+    <p
       v-if="failure"
       class="cr-warn cr-small"
     >
@@ -424,14 +463,15 @@ export default defineComponent({
       class="text-muted cr-small"
     >
       {{ ctx.t('costReport.usage.note', { step: stepText(series.step), count: series.covered, zone: zone || '—' }) }}
-      <span
-        v-if="missing > 0"
-        class="cr-gap-l"
-      >{{ series.covered > 1 ? ctx.t('costReport.usage.missing', { count: missing }) : ctx.t('costReport.usage.missingSingle', { count: missing }) }}</span>
-      <span
-        v-if="chart.hasPartial"
-        class="cr-gap-l"
-      >{{ ctx.t('costReport.usage.partial') }}</span>
+      <template v-if="gaps.inner > 0">
+        {{ ' ' }}{{ ctx.t('costReport.usage.missing', { count: gaps.inner }) }}
+      </template>
+      <template v-if="gaps.outer > 0">
+        {{ ' ' }}{{ ctx.t('costReport.usage.missingEdge', { count: gaps.outer }) }}
+      </template>
+      <template v-if="chart.hasPartial">
+        {{ ' ' }}{{ ctx.t('costReport.usage.partial') }}
+      </template>
     </p>
   </CrSection>
 </template>

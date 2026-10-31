@@ -76,6 +76,25 @@ export function valueOf(p: SeriesPoint, id: string, metric: Metric): number | nu
 }
 
 /**
+ * Segments without data, split: `inner` lie between two points with data
+ * (the lines really break there), `outer` are before the data starts or
+ * after it ends (nothing breaks; there is simply no line yet).
+ */
+export function emptySegments(s: Series | null | undefined): { inner: number; outer: number } {
+  const pts = s?.points || [];
+  const has = pts.map((p) => !!p.depts);
+  const first = has.indexOf(true);
+  const last = has.lastIndexOf(true);
+
+  if (first < 0) {
+    return { inner: 0, outer: pts.length };
+  }
+  const inner = has.slice(first, last + 1).filter((x) => !x).length;
+
+  return { inner, outer: pts.length - (last - first + 1) };
+}
+
+/**
  * Average utilisation (%) per department over the measured segments of a
  * series, weighted by minutes. Segments without data do not count; a
  * department with no value at all is left out (no request, no ratio).

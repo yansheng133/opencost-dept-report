@@ -34,7 +34,7 @@ costReport:
     bad_step: This sampling interval is not offered for this period.
     no_department: You have no access to any department.
     not_found: Not found.
-    series_budget: "OpenCost has just run large queries; try again in {seconds} seconds. Back-to-back large queries leave it unable to reach Prometheus, and the billing report fails too."
+    series_budget: "OpenCost has just handled large queries; try again in {seconds} s."
     upstream: OpenCost failed to answer for this period (it may be busy); try again in a minute.
     not_ready: The backend has not received data from OpenCost yet.
     unauthenticated: The request did not come through the Kubernetes API server, so the backend cannot tell who you are.
@@ -207,6 +207,7 @@ costReport:
       invalid: "That is not a complete date."
       before: "The earliest data is on {min}; pick that day or later."
       after: "Days after today ({max}, UTC) cannot be chosen."
+      only: "Only {min} has data."
   usage:
     title: Usage trend per department
     description: Usage = actual use ÷ requests. Cost tells what was paid; usage tells whether what was requested is used.
@@ -220,8 +221,8 @@ costReport:
     stepFailed: "Could not load one point every {step}: {error}. Still showing one point every {current}."
     none: No segments for this period (OpenCost’s segmented query failed, or there are no samples yet).
     noTimes: The segments have no usable times.
-    note: "One point every {step}, {count} points; times are in this computer’s time zone ({zone})."
-    missing: "{count} segments have no data; the lines break there."
+    note: "One point every {step}, {count, plural, =1 {1 point} other {# points}}; times are in this computer’s time zone ({zone})."
+    missing: "{count, plural, =1 {1 segment has} other {# segments have}} no data; the lines break there."
     partial: "Dashed segments do not cover a full interval, so they read low."
     tipFrom: "{start}, {minutes} min"
     tipNoData: No data measured in this segment
@@ -235,6 +236,8 @@ costReport:
       ram: "Average memory use: {list}"
     summaryNone: "No usage data in this period"
     missingSingle: "{count, plural, =1 {1 segment has} other {# segments have}} no data; with a single point there is no line."
+    waitStep: "{step}: available in {seconds} s"
+    missingEdge: "{count, plural, =1 {1 segment has} other {# segments have}} no data (before the data starts or after it ends)."
   env:
     title: Cost per environment
     description: "The same workloads split by the {label} label."
@@ -387,7 +390,7 @@ costReport:
     effectiveNoPromNoReason: "Prometheus could not be reached; no reason was given"
     summary: "Effective coverage {pct}"
     summaryUnknown: "Coverage unknown"
-    reconNoteScaled: "Allocated {allocated} vs asset cost {measured} ({byType}). OpenCost priced the nodes over {assetsMinutes} min; scaled to the allocation's {minutes} min = {assets}. Reconcile with idle included."
+    reconNoteScaled: "Allocated {allocated} vs asset cost {assets} (OpenCost priced the nodes at {measured} over {assetsMinutes} min, scaled to {minutes} min; {byType}). Reconcile with idle included."
     listSep: ", "
     targetChanged: "Number of targets changed ({min}–{max})"
     edgeList: "Start / end of data"
@@ -473,7 +476,7 @@ costReport:
       block: Needs approval
     reason:
       tampered: "Seal hashes do not match: {days}"
-      missing_days: "{missing} days are not sealed; {sealed} days do not make a monthly bill"
+      missing_days: "{missing, plural, =1 {1 day is} other {# days are}} not sealed; {sealed, plural, =1 {1 day does} other {# days do}} not make a monthly bill"
       in_progress: The month is not over; running total
       day_blocked: Some days need approval
       day_marked: Some days need a note on estimates

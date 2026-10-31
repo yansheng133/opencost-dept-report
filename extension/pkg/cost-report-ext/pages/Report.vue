@@ -31,7 +31,9 @@ import { gapText, missingMinutes, isEmptyPeriod } from '../utils/describe';
 import {
   fmtLocal, monthFactor, pctValue, share, timeZone
 } from '../utils/format';
-import { dayField, dayLocalRange, isOngoingDay, DayProblem } from '../utils/day';
+import {
+  checkDay, dayField, dayLocalRange, isOngoingDay, DayProblem
+} from '../utils/day';
 import {
   SPY_FRACTION, SPY_MIN_PX, COVERAGE_WARN_PCT, REFRESH_INTERVAL_MS, THIN_SAMPLE_FACTOR
 } from '../config/backend';
@@ -451,6 +453,9 @@ export default defineComponent({
       dayProblem.value = null;
     }
 
+    // The hint describes a rejected value; once the reader moves on (another
+    // window or day, the filter, idle mode) it no longer applies.
+    watch([() => view.value.window, () => view.value.day, filter, idleShared], clearProblem);
     function showProblem(p: DayProblem) {
       dayProblem.value = p;
       if (p) {
@@ -508,6 +513,10 @@ export default defineComponent({
       },
       dayInput:   (e: Event) => {
         dayDraft.value = (e.target as HTMLInputElement).value;
+        // Typing a usable date again clears the hint about the rejected one.
+        if (dayProblem.value && !checkDay(dayDraft.value, dayMin.value, dayMax.value)) {
+          clearProblem();
+        }
       },
       dayChange:  (e: Event) => {
         dayDraft.value = (e.target as HTMLInputElement).value;
@@ -549,7 +558,10 @@ export default defineComponent({
       toc,
       fmtLocal,
       share,
-      pickWindow:  (w: string) => setQuery({ window: w }),
+      pickWindow:  (w: string) => {
+        clearProblem();
+        setQuery({ window: w });
+      },
       backToLive:  () => {
         clearProblem();
         setQuery({ window: config.value?.defaultWindow || null });
@@ -643,6 +655,7 @@ export default defineComponent({
               ><input
                 type="radio"
                 name="cr-window"
+                :value="w"
                 :checked="w === currentWindow"
                 @change="pickWindow(w)"
               > {{ w }}</label>
@@ -679,7 +692,7 @@ export default defineComponent({
                 id="cr-day-hint"
                 class="cr-day-hint"
                 role="alert"
-              >{{ t(`costReport.dept.dayProblem.${ dayProblem }`, { min: dayMin || '—', max: dayMax }) }}</span>
+              >{{ t(`costReport.dept.dayProblem.${ dayProblem === 'before' && dayMin === dayMax ? 'only' : dayProblem }`, { min: dayMin || '—', max: dayMax }) }}</span>
             </div>
           </fieldset>
           <fieldset v-if="parts && parts.idle && !empty">

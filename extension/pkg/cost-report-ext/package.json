@@ -1,7 +1,7 @@
 {
   "name": "cost-report-ext",
   "description": "Department cost allocation from OpenCost, with billing checks, usage trends and sealed billing periods",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "private": false,
   "rancher": {
     "annotations": {
@@ -32,5 +32,5 @@
     "chargeback",
     "cost-allocation"
   ],
-  "icon": "https://raw.githubusercontent.com/yansheng133/opencost-dept-report/v1.7.0/extension/pkg/cost-report-ext/assets/icon.svg"
+  "icon": "https://raw.githubusercontent.com/yansheng133/opencost-dept-report/v1.8.0/extension/pkg/cost-report-ext/assets/icon.svg"
 }

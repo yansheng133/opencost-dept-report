@@ -98,15 +98,36 @@ pub fn build(input: &SeriesInput<'_>) -> Option<Value> {
             );
         }
         let first = rs[0].1;
+        // OpenCost can extend the last segment past the end asked for (to
+        // 14:58 when the report ends at 14:50); cut it there and mark it
+        // partial, so the chart never shows time the header excludes.
+        let end = first
+            .get("end")
+            .and_then(Value::as_str)
+            .and_then(|e| parse_iso(e).ok());
+        let past_limit = end.is_some_and(|e| e as f64 > input.limit);
+        let end_v = if past_limit {
+            json!(fmt_iso(input.limit))
+        } else {
+            first.get("end").cloned().unwrap_or(Value::Null)
+        };
+        let minutes = match first
+            .get("start")
+            .and_then(Value::as_str)
+            .and_then(|s| parse_iso(s).ok())
+        {
+            Some(st) if past_limit => minutes.min((input.limit - st as f64) / 60.0),
+            _ => minutes,
+        };
         points.push(json!({
             "start": first.get("start"),
-            "end": first.get("end"),
+            "end": end_v,
             "minutes": round(minutes, 1),
             // Less than 90 % of the step: the first segment after a gap or at
             // the start of data, or the unfinished last one. Averages over a
             // part-segment read low (a 20-minute first hour showed a third of
             // the usage), so the page draws these dashed.
-            "partial": minutes < step_min * 0.9,
+            "partial": past_limit || minutes < step_min * 0.9,
             "depts": depts,
         }));
     }
@@ -191,6 +212,27 @@ mod tests {
             (p["depts"]["rd"]["cpu"].as_f64().unwrap() - 0.0024 * 1440.0 / 290.0 / 0.1).abs()
                 < 1e-3
         );
+    }
+
+    #[test]
+    fn last_segment_cut_at_the_limit() {
+        let segs = vec![
+            json!({"rd": {"start": "2026-10-31T06:00:00Z", "end": "2026-10-31T06:58:18Z", "minutes": 58.3,
+            "cpuCoreRequestAverage": 0.1, "cpuCoreUsageAverage": 0.01}}),
+        ];
+        let limit = parse_iso("2026-10-31T06:50:00Z").unwrap() as f64;
+        let s = build(&SeriesInput {
+            segments: &segs,
+            step: "1h",
+            span: Some(1440.0),
+            default_step: None,
+            limit,
+        })
+        .unwrap();
+        let p = &s["points"][0];
+        assert_eq!(p["end"], "2026-10-31T06:50:00Z");
+        assert_eq!(p["minutes"], 50.0);
+        assert_eq!(p["partial"], true);
     }
 
     #[test]

@@ -359,7 +359,10 @@ fn series_whitelist_and_budget() {
     // 288 segments: allowed alone (first in the period), then over the budget of 100.
     let (s, _) = get(&a, "series?window=24h&step=5m", Some("finance"));
     assert_eq!(s, 200);
-    let (s, e) = get(&a, "series?window=24h&step=30m", Some("rd-manager"));
+    // A coarse step (48 segments) still passes; a large one (7d at 1h, 168) does not.
+    let (s, _) = get(&a, "series?window=24h&step=30m", Some("rd-manager"));
+    assert_eq!(s, 200);
+    let (s, e) = get(&a, "series?window=7d&step=1h", Some("rd-manager"));
     assert_eq!(
         (s, e["error"]["code"].as_str()),
         (429, Some("series_budget"))
