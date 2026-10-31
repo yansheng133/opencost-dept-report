@@ -1,0 +1,16 @@
+nameOverride: ""
+fullnameOverride: ""
+plugin:
+  enabled: true
+  versionOverride: ""
+  endpoint: >-
+    https://raw.githubusercontent.com/yansheng133/opencost-dept-report/gh-pages/extensions/cost-report-ext/1.3.0
+  compressedEndpoint: >-
+    https://raw.githubusercontent.com/yansheng133/opencost-dept-report/gh-pages/extensions/cost-report-ext/1.3.0.tgz
+  noCache: false
+  noAuth: false
+  metadata:
+    catalog.cattle.io/rancher-version: ">= 2.15.0-0 < 2.16.0-0"
+    catalog.cattle.io/ui-extensions-version: ">= 3.0.0 < 4.0.0"
+    catalog.cattle.io/display-name: Cost allocation
+    catalog.cattle.io/certified: community
