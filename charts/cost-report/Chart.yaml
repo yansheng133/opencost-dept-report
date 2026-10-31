@@ -1,0 +1,15 @@
+apiVersion: v2
+name: cost-report
+description: Department cost allocation from OpenCost, served as a Kubernetes aggregated API for the Rancher UI extension
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+kubeVersion: ">=1.30.0-0"
+home: https://github.com/yansheng133/opencost-dept-report
+sources:
+  - https://github.com/yansheng133/opencost-dept-report
+keywords: [opencost, finops, chargeback, rancher]
+annotations:
+  catalog.cattle.io/display-name: cost-report
+  catalog.cattle.io/namespace: cost-report
+  catalog.cattle.io/release-name: cost-report

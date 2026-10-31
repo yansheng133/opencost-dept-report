@@ -1,0 +1,24 @@
+[package]
+name = "cost-report"
+description = "Department cost report from OpenCost as a Kubernetes aggregated API, plus the snapshotter and volume-usage collectors"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+cost-report-core = { path = "../cost-report-core" }
+serde_json.workspace = true
+# TLS for the aggregated API port and for calls to the API server; ring
+# provider, no OpenSSL.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+# Blocking HTTP client with rustls.
+ureq = { version = "2.12", default-features = false, features = ["tls"] }
+# Reads the common name of the API server's proxy client certificate.
+x509-parser = "0.18"
+signal-hook = { version = "0.4", default-features = false, features = ["iterator"] }
+
+[dev-dependencies]
+# Test certificates for the TLS port.
+rcgen = "0.14"

@@ -31,13 +31,13 @@ OpenCost 1.121.2、Prometheus 3.14，chart 取自 SUSE Application Collection。
 - `aggregate` 可用 `namespace`、`controller`、`pod`、`container`、`label:<鍵>`，可逗號組合。
 - **標籤鍵含連字號可以用**：`label:cost-center`、`filter=label[cost-center]:"mfg"` 都正常。
 - **Pod 標籤優先於 namespace 標籤**：把某個 Pod 標成別的部門，它的成本就算到那個部門，
-  這是「跨部門計費」最簡單的示範方式。
+  這是做「跨部門計費」最簡單的方式。
 - **`window=1h` 是「從目前整點起算」，不是最近 60 分鐘。** 19:10 查會得到 19:00～19:10，
   `minutes` 只有 10.6。要「最近 60 分鐘」就給 RFC3339 的絕對起訖。
 - **比對兩次查詢一定要用絕對時間**，相對 window 在兩次查詢之間會移動，造成假差異。
 - 回傳的 `start`／`end` 是資料實際涵蓋的區間，會比你要求的短。
 - **整台節點重開後，所有 Pod 會同時短暫出現負成本**：`start` 比 `end` 還晚、`minutes` 是負的，
-  約 5 分鐘後自己恢復。不是時鐘問題。demo 前剛重開過，要先等一下再看。
+  約 5 分鐘後自己恢復。不是時鐘問題。剛重開過的話，要先等一下再看。
 
 ## 閒置成本與無法分攤
 
@@ -95,5 +95,5 @@ OpenCost 也會輸出 `kube_pod_container_resource_requests`（`job="opencost"`�
 - 連續性 = `count_over_time(up{job="opencost"}[span]) × 抓取間隔 ÷ span`。
 - **分母要從 opencost target 自己的第一筆樣本算起**，不是 Prometheus 的起點，
   否則剛裝好時會報出不存在的斷層。
-- 筆電上的環境：睡眠、闔蓋、VM 關機都會造成斷層，而且補不回來。
-  OpenCost 不會替沒量到的時段推估——這點對客戶反而是可信度的來源。
+- 節點或 Prometheus 停機、重開都會造成斷層，而且 OpenCost 補不回來。
+  OpenCost 不會替沒量到的時段推估，所以缺的部分要由 cost-report 量出來並標示（見 data-gaps.md）。

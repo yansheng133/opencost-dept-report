@@ -1,0 +1,617 @@
+// Styles of the cost-report pages. Every class starts with cr- so nothing
+// leaks into the rest of Rancher; colors come from Rancher's theme
+// variables, so the light and dark themes both work.
+
+.cr-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 1200px;
+
+  h2 {
+    margin: 0;
+    font-size: 20px;
+  }
+
+  h3 {
+    font-size: 16px;
+  }
+}
+
+.cr-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px 24px;
+
+  h1 {
+    margin: 2px 0 6px;
+  }
+}
+
+.cr-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  font-size: 13px;
+  color: var(--muted, #888);
+
+  b {
+    color: var(--body-text);
+    font-weight: 600;
+  }
+}
+
+.cr-num {
+  font-family: var(--font-family-mono, ui-monospace, monospace);
+  font-variant-numeric: tabular-nums;
+}
+
+.cr-small {
+  font-size: 12.5px;
+}
+
+.cr-accent {
+  color: var(--primary, #3d8fd6) !important;
+}
+
+.cr-warn {
+  color: var(--warning, #c47a1a);
+}
+
+.cr-bad {
+  color: var(--error, #d32f2f);
+}
+
+.cr-scope {
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px dashed var(--border);
+  border-radius: var(--border-radius, 4px);
+  font-size: 13px;
+}
+
+// Banners readable in the dark theme too (Rancher's are transparent there).
+.cr-banner {
+  padding: 10px 12px;
+  border-left: 4px solid var(--info, #2453ff);
+  border-radius: var(--border-radius, 4px);
+  background: var(--info-banner-bg, rgba(36, 83, 255, 0.12));
+  color: var(--body-text);
+  line-height: 1.6;
+}
+
+.cr-banner-warning {
+  border-left-color: var(--warning, #daa520);
+  background: var(--warning-banner-bg, rgba(218, 165, 32, 0.15));
+}
+
+.cr-banner-error {
+  border-left-color: var(--error, #d32f2f);
+  background: var(--error-banner-bg, rgba(211, 47, 47, 0.15));
+}
+
+.cr-target {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 560px;
+
+  p {
+    margin: 0;
+  }
+}
+
+.cr-target-pick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  select {
+    min-width: 220px;
+  }
+}
+
+// Controls: segmented radio groups.
+.cr-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 20px;
+
+  fieldset {
+    border: 0;
+    margin: 0;
+    padding: 0;
+  }
+
+  legend {
+    font-size: 12px;
+    color: var(--muted, #888);
+    margin-bottom: 4px;
+  }
+}
+
+.cr-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  padding: 8px 0;
+  background: var(--body-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.cr-seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+  border: 1px solid var(--border);
+  border-radius: var(--border-radius, 4px);
+  overflow: hidden;
+
+  label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin: 0;
+    padding: 4px 10px;
+    font-size: 13px;
+    cursor: pointer;
+    border-right: 1px solid var(--border);
+
+    &:last-child {
+      border-right: 0;
+    }
+
+    &:has(input:checked) {
+      background: var(--primary, #3d8fd6);
+      color: var(--primary-text, #fff);
+    }
+
+    &:has(input:focus-visible) {
+      outline: 2px solid var(--primary, #3d8fd6);
+      outline-offset: -2px;
+    }
+  }
+
+  input {
+    margin: 0;
+  }
+}
+
+.cr-date {
+  width: auto;
+  padding: 4px 8px;
+  font-size: 13px;
+}
+
+.cr-toc {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  font-size: 13px;
+}
+
+.cr-toc-tools {
+  margin-left: auto;
+}
+
+.cr-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--border-radius, 4px);
+  background: var(--body-bg);
+  scroll-margin-top: 70px;
+}
+
+.cr-section-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  .cr-fold {
+    padding: 0 4px;
+    min-height: 0;
+  }
+}
+
+.cr-anchor {
+  opacity: 0;
+  text-decoration: none;
+
+  .cr-section-head:hover &,
+  &:focus {
+    opacity: 0.6;
+  }
+}
+
+.cr-desc {
+  margin: 0 0 4px;
+  font-size: 13px;
+}
+
+// Billing gate.
+.cr-gate {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-left: 6px solid var(--muted, #888);
+  border-radius: var(--border-radius, 4px);
+  scroll-margin-top: 70px;
+
+  &.ok { border-left-color: var(--success, #1a7f52); }
+  &.mark { border-left-color: var(--warning, #daa520); }
+  &.block { border-left-color: var(--error, #d32f2f); }
+}
+
+.cr-gate-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.cr-tag {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 600;
+  border: 1px solid currentColor;
+
+  &.ok { color: var(--success, #1a7f52); }
+  &.mark { color: var(--warning, #b4571a); }
+  &.block { color: var(--error, #d32f2f); }
+}
+
+.cr-checks {
+  display: grid;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.cr-check {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.cr-check-name {
+  font-weight: 600;
+}
+
+.cr-check-val {
+  font-weight: 600;
+}
+
+.cr-dot {
+  width: 10px;
+  height: 10px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--muted, #888);
+
+  &.ok { background: var(--success, #1a7f52); }
+  &.mark { background: var(--warning, #daa520); }
+  &.block { background: var(--error, #d32f2f); }
+}
+
+// Totals.
+.cr-totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+
+  > div {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--border-radius, 4px);
+  }
+}
+
+.cr-k {
+  font-size: 12.5px;
+  color: var(--muted, #888);
+  align-self: flex-start;
+}
+
+.cr-v {
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.cr-s {
+  font-size: 12px;
+  color: var(--muted, #888);
+}
+
+// Bars.
+.cr-bars {
+  display: grid;
+  gap: 6px;
+}
+
+.cr-bar-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 200px) minmax(0, 1fr) minmax(140px, auto);
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.cr-bar-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cr-bar-track {
+  height: 14px;
+  border-radius: 3px;
+  background: var(--sortable-table-row-bg, rgba(127, 127, 127, 0.1));
+}
+
+.cr-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+
+  &.hatch {
+    background-image: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.45) 0 3px, transparent 3px 7px) !important;
+  }
+}
+
+.cr-bar-val {
+  text-align: right;
+}
+
+.cr-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 4px;
+  border-radius: 2px;
+  flex: none;
+  vertical-align: baseline;
+}
+
+.cr-dept-tag {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 8px;
+  white-space: nowrap;
+}
+
+.cr-pill {
+  display: inline-block;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+  white-space: nowrap;
+
+  &.none {
+    color: var(--muted, #888);
+    border-style: dashed;
+  }
+}
+
+// Tables.
+.cr-table-wrap {
+  overflow-x: auto;
+}
+
+.cr-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+
+  th,
+  td {
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    vertical-align: top;
+  }
+
+  th {
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  td.cr-num {
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  tfoot td {
+    font-weight: 600;
+  }
+}
+
+.cr-more {
+  text-align: center !important;
+}
+
+.cr-thin {
+  opacity: 0.5;
+}
+
+.cr-eff {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.cr-eff-track {
+  display: inline-block;
+  width: 56px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--sortable-table-row-bg, rgba(127, 127, 127, 0.15));
+  overflow: hidden;
+}
+
+.cr-eff-fill {
+  display: block;
+  height: 100%;
+}
+
+.cr-formula {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.cr-notes {
+  display: grid;
+  gap: 8px;
+}
+
+.cr-note {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  border-left: 3px solid var(--border);
+  font-size: 13px;
+}
+
+.cr-card-info p {
+  margin: 0 0 4px;
+  font-size: 13px;
+}
+
+.cr-actions {
+  margin: 0;
+  padding-left: 20px;
+
+  li {
+    margin-bottom: 10px;
+    font-size: 13.5px;
+  }
+}
+
+// Usage chart.
+.cr-chart {
+  position: relative;
+
+  svg {
+    display: block;
+    width: 100%;
+    height: 260px;
+  }
+
+  &.busy svg {
+    opacity: 0.5;
+  }
+}
+
+.cr-grid line {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.cr-axis {
+  fill: var(--muted, #888);
+  font-size: 11px;
+}
+
+.cr-path {
+  fill: none;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.cr-partial {
+  stroke-dasharray: 4 3;
+}
+
+.cr-partial-dot {
+  fill: var(--body-bg);
+  stroke-width: 1.5;
+}
+
+.cr-end {
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.cr-hit {
+  stroke: var(--muted, #888);
+  stroke-dasharray: 2 2;
+}
+
+.cr-chart-tip {
+  position: absolute;
+  top: 8px;
+  transform: translateX(-50%);
+  min-width: 180px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--border-radius, 4px);
+  background: var(--body-bg);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+  font-size: 12.5px;
+  pointer-events: none;
+}
+
+.cr-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 12.5px;
+}
+
+// Months.
+.cr-month {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--border-radius, 4px);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cr-month-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.cr-month-ym,
+.cr-month-amt {
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.cr-month-amt {
+  margin-left: auto;
+}
+
+.cr-month-depts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  font-size: 13px;
+}
+
+// Space before an inline note (Vue drops leading spaces inside elements).
+.cr-gap-l {
+  margin-left: 0.35em;
+}

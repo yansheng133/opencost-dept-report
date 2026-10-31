@@ -1,0 +1,43 @@
+# Rancher cluster role templates for cost-report.
+#
+# Apply to the Rancher local (management) cluster, then add members in
+# Cluster > Cluster and Project Members with these roles. Rancher binds them
+# on the downstream cluster, where the API server and cost-report check them.
+#
+# The resources are cluster-scoped, so these are cluster roles (context:
+# cluster), not project roles. Granting one does not give access to anything
+# else in the cluster.
+#
+# One template per department: copy the last one and change the name and the
+# resourceNames entry. The department ID is the value of the department label
+# (config.labels.department, default cost-center).
+apiVersion: management.cattle.io/v3
+kind: RoleTemplate
+metadata:
+  name: cost-report-viewer-all
+displayName: "Cost report: every department"
+description: Every department's cost and the cluster-wide numbers (idle, unallocated, reconciliation).
+context: cluster
+rules:
+  - apiGroups: ["api.costreport.yansheng133.github.io"]
+    resources: ["config", "reports", "series", "seals", "periods", "departments"]
+    verbs: ["get", "list"]
+---
+apiVersion: management.cattle.io/v3
+kind: RoleTemplate
+metadata:
+  name: cost-report-department-rd
+displayName: "Cost report: department rd"
+description: The rd department's cost only.
+context: cluster
+rules:
+  - apiGroups: ["api.costreport.yansheng133.github.io"]
+    resources: ["config", "reports", "series", "seals", "periods"]
+    verbs: ["get", "list"]
+  - apiGroups: ["api.costreport.yansheng133.github.io"]
+    resources: ["departments"]
+    verbs: ["list"]
+  - apiGroups: ["api.costreport.yansheng133.github.io"]
+    resources: ["departments"]
+    resourceNames: ["rd"]
+    verbs: ["get"]

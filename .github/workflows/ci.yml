@@ -1,0 +1,136 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    strategy:
+      matrix:
+        # Only x86-64 and ARM64 are supported targets.
+        os: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    # Build and test inside SUSE BCI rather than on the Ubuntu host.
+    container: registry.suse.com/bci/rust:1.98
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: |
+          grep PRETTY_NAME /etc/os-release
+          cargo --version && cargo fmt --version && cargo clippy --version
+      - run: cargo fmt --all -- --check
+      - name: cargo clippy
+        shell: bash
+        run: |
+          set -o pipefail
+          if ! cargo clippy --workspace --all-targets --locked --message-format=short -- -D warnings 2>&1 | tee clippy.txt; then
+            grep -E '^[^ ]+:[0-9]+:[0-9]+: (error|warning)' clippy.txt \
+              | sed -E 's/^([^:]+):([0-9]+):([0-9]+): (.*)$/::error file=\1,line=\2,col=\3::\4/' || true
+            exit 1
+          fi
+      - run: cargo test --workspace --locked
+
+  extension:
+    runs-on: ubuntu-24.04
+    # @rancher/shell 3.0.13 requires Node.js >= 24 (package.json "engines").
+    container: registry.suse.com/bci/nodejs:24
+    defaults:
+      run:
+        working-directory: extension
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: |
+          grep PRETTY_NAME /etc/os-release
+          node --version && npm --version
+      - run: npm install -g yarn@1.22.22
+      - name: Extension version matches the release version
+        run: |
+          ext="$(node -p "require('./pkg/cost-report-ext/package.json').version")"
+          cargo="$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"$/\1/p' ../Cargo.toml)"
+          [ "$ext" = "$cargo" ] || { echo "::error::extension version $ext is not Cargo.toml's $cargo"; exit 1; }
+      - run: yarn install --frozen-lockfile
+      - run: yarn lint
+      - run: yarn test
+      - run: yarn build-pkg cost-report-ext
+
+  secrets:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  chart:
+    runs-on: ubuntu-24.04
+    env:
+      # Rancher 2.15 supports Kubernetes v1.34 to v1.36; validate against the lowest.
+      KUBE_VERSION: 1.34.0
+      KUBECONFORM_VERSION: v0.8.0
+      KUBECONFORM_SHA256: 9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v4.2.4
+      - name: Install kubeconform
+        run: |
+          curl -fsSL -o /tmp/kubeconform.tar.gz \
+            "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
+          echo "${KUBECONFORM_SHA256}  /tmp/kubeconform.tar.gz" | sha256sum -c -
+          sudo tar -xzf /tmp/kubeconform.tar.gz -C /usr/local/bin kubeconform
+      - name: Chart version matches the release
+        run: |
+          cargo_version="$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"$/\1/p' Cargo.toml)"
+          chart_version="$(sed -n 's/^version: //p' charts/cost-report/Chart.yaml)"
+          app_version="$(sed -n 's/^appVersion: "\(.*\)"$/\1/p' charts/cost-report/Chart.yaml)"
+          if [ "$chart_version" != "$cargo_version" ] || [ "$app_version" != "$cargo_version" ]; then
+            echo "::error::charts/cost-report/Chart.yaml version/appVersion must equal the Cargo workspace version ${cargo_version}"
+            exit 1
+          fi
+      - run: helm lint charts/cost-report -f charts/cost-report/ci/ci-values.yaml --kube-version "${KUBE_VERSION}"
+      - name: helm template
+        run: |
+          mkdir -p rendered
+          helm template cost-report charts/cost-report -n cost-report -f charts/cost-report/ci/ci-values.yaml \
+            --kube-version "${KUBE_VERSION}" > rendered/full.yaml
+          helm template cost-report charts/cost-report -n cost-report --set image.digest=sha256:$(printf '0%.0s' {1..64}) \
+            --set snapshotter.enabled=false --set seals.enabled=false \
+            --kube-version "${KUBE_VERSION}" > rendered/minimal.yaml
+      - name: Rendering fails without required values
+        run: |
+          check() {
+            local want="$1"; shift
+            if out=$(helm template x charts/cost-report --kube-version "${KUBE_VERSION}" "$@" 2>&1); then
+              echo "rendering unexpectedly succeeded: $*"; exit 1
+            fi
+            grep -qF "$want" <<< "$out" || { echo "::error::expected '$want', got: $(head -c 300 <<< "$out" | tr '\n' ' ')"; exit 1; }
+          }
+          check "image.digest is required"
+          check "image.digest must look like" --set image.digest=sha256:abc
+          check "must be lower-case letters" -f charts/cost-report/ci/ci-values.yaml --set 'config.departments[0].id=Bad_ID'
+      - name: Rendered objects are what the design says
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          f=rendered/full.yaml
+          grep -E '^kind: ' "$f" | sort | uniq -c
+          # The server's own RBAC: read the request-header ConfigMap and make
+          # SubjectAccessReviews, nothing else. No impersonation, no Secrets.
+          if grep -q impersonate "$f"; then fail "no impersonate"; fi
+          if grep -qE '^\s+resources: \[.*secrets' "$f"; then fail "no Secrets access"; fi
+          grep -q 'name: system:auth-delegator' "$f" || fail "auth-delegator binding missing"
+          grep -q 'name: extension-apiserver-authentication-reader' "$f" || fail "auth reader binding missing"
+          grep -q 'name: cost-report-department-rd' "$f" || fail "department ClusterRole missing"
+          awk '/name: cost-report-department-rd$/{c=1} c && /resourceNames/{print; exit}' "$f" | grep -q '"rd"' \
+            || fail "department ClusterRole must name its department"
+          grep -A20 '^kind: APIService$' "$f" | grep -q 'caBundle: ' || fail "APIService needs a caBundle"
+          if grep -q insecureSkipTLSVerify "$f"; then fail "no insecureSkipTLSVerify"; fi
+          grep -q 'helm.sh/resource-policy: keep' "$f" || fail "seals volume must be kept on uninstall"
+          if grep -q '^kind: PersistentVolumeClaim' rendered/minimal.yaml; then fail "minimal render must have no PVC"; fi
+      - run: kubeconform -strict -summary -kubernetes-version "${KUBE_VERSION}" -skip APIService rendered/full.yaml rendered/minimal.yaml

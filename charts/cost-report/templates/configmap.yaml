@@ -1,0 +1,26 @@
+{{- include "cost-report.checkDepartments" . }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "cost-report.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cost-report.labels" . | nindent 4 }}
+data:
+  config.json: |
+    {{- include "cost-report.configJson" . | nindent 4 }}
+{{- if not .Values.rateCard.existingConfigMap }}
+---
+# The rate card is read on every refresh: a new version applies without a
+# restart (the kubelet updates the mounted file within about a minute).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "cost-report.fullname" . }}-ratecard
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cost-report.labels" . | nindent 4 }}
+data:
+  ratecard.json: |
+    {{- toPrettyJson (dict "currency" .Values.rateCard.currency "note" .Values.rateCard.note "versions" .Values.rateCard.versions) | nindent 4 }}
+{{- end }}

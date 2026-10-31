@@ -31,11 +31,11 @@
 | 6 | 掛到平台共用成本 | 確實無法歸屬 | — |
 
 **第 3 階最值得投資，因為它的資料來源跟 Prometheus 無關。** 兩個系統同時掛的機率，
-遠低於任何單一系統自己掛掉。這個 repo 的 `snapshotter/` 就是第 3 階。
+遠低於任何單一系統自己掛掉。這個 repo 的 `cost-report snapshotter` 就是第 3 階。
 
 ## 這個 repo 實作了什麼
 
-### 1. 覆蓋率量測（`app/app.py` 的 `coverage()`）
+### 1. 覆蓋率量測（`crates/cost-report-core/src/coverage.rs`）
 
 報表會直接問 Prometheus「這段區間到底量到了多少」，低於 99.5% 就在畫面最上方顯示，
 並列出缺漏區段的起訖與長度。
@@ -52,10 +52,10 @@
 缺漏區段：2026-09-23T05:54:00Z → 2026-09-23T09:11:00Z
 ```
 
-那是筆電闔蓋移動的三個多小時。**報表在加上這個之前照樣產出，只是少算了 13.69% 的時間，
+那是測試環境的主機停機了三個多小時。**報表在加上這個之前照樣產出，只是少算了 13.69% 的時間，
 畫面上完全看不出來。** 這就是為什麼要先做這件事。
 
-### 2. 宣告量快照（`snapshotter/`）
+### 2. 宣告量快照（`cost-report snapshotter`）
 
 每 5 分鐘把每個 Running Pod 的 `requests`、每個 PVC 的儲存宣告量，連同部門標籤存成一份
 JSON。只讀 API server（pods、namespaces、persistentvolumeclaims，`get`/`list`），
@@ -64,7 +64,7 @@ JSON。只讀 API server（pods、namespaces、persistentvolumeclaims，`get`/`l
 實測每份快照 6 KiB（36 個 Pod）：5 分鐘一次是**每天 1.7 MiB**，保留 35 天約 59 MiB。
 資源用量 CPU 10m、記憶體 64Mi 以下。
 
-部署上要注意的是 StorageClass：`deploy.sh` 會自動挑，但叢集沒有預設的時候要指定。
+部署上要注意的是 StorageClass：叢集沒有預設 StorageClass 的時候，要在 chart 的 `snapshotter.persistence.storageClass` 指定。
 RKE2 裝了 local-path 也不一定會標成 default，而留空的症狀是 PVC 無聲 Pending、
 rollout 逾時後吐一句看不出原因的錯——所以這個檢查放在部署前，不是讓它跑到逾時。
 
@@ -72,7 +72,7 @@ rollout 逾時後吐一句看不出原因的錯——所以這個檢查放在部
 
 - **Pod 的宣告量不是「所有容器加起來」**：排程器取「一般容器總和」與「init container 峰值」
   的較大者，而原生 sidecar（`restartPolicy: Always` 的 init container）要併入總和，
-  並且只有**排在 init 前面**的 sidecar 才算進那一顆的峰值。`test_snapshot.py` 有逐項驗算。
+  並且只有**排在 init 前面**的 sidecar 才算進那一顆的峰值。`crates/cost-report-core/src/snapshot.rs` 的測試有逐項驗算。
 - **ServiceAccount token 要每次重讀**。現在的投射式 token 大約一小時輪替一次，
   啟動時讀一次就快取的話，這支程式會在一小時後開始收到 401——而且是在你最需要它的時候。
 - **儲存要按 PVC 算，不能把 Pod 掛的量加起來**。成本屬於 PVC：兩個 Pod 掛同一個 PVC 時
@@ -84,7 +84,7 @@ rollout 逾時後吐一句看不出原因的錯——所以這個檢查放在部
 
 快照器另外開一個唯讀的 `/allocation` 介面（Service `cost-snapshotter`，80 → 8080），
 讓 cost-report 在報表中途發現斷層時直接問得到，不必等人 `kubectl cp`。
-它跟 `fallback.py` 共用同一份計算程式碼——兩份實作遲早會漂移，而漂移的症狀是
+它跟 `cost-report fallback` 指令共用同一份計算程式碼——兩份實作遲早會漂移，而漂移的症狀是
 「離線算的帳」跟「線上問到的帳」對不起來。**區間內沒有快照時它回 404，不是回一份全零的
 成功結果**：呼叫端必須分得出「沒有資料」（要再降一階）和「資料是零」（可以出帳）。
 
@@ -110,11 +110,11 @@ rollout 逾時後吐一句看不出原因的錯——所以這個檢查放在部
 
 沒有量過誤差的備援方案，跟沒有備援方案差不多：真的要用的時候，你不知道該不該相信它。
 
-所以 `fallback.py` 有一個 `--compare` 模式：在**資料正常的期間**跑，把宣告量算出來的
+所以 `cost-report fallback` 有一個 `--compare` 模式：在**資料正常的期間**跑，把宣告量算出來的
 分攤比例跟 OpenCost 的實測比一比。
 
 ```bash
-python3 fallback.py --snapshots ./snapshots --last 20m --compare http://127.0.0.1:9003
+cost-report fallback --snapshots ./snapshots --last 20m --compare http://127.0.0.1:9003
 ```
 
 實機量到的結果（15 分鐘、15 筆快照、每分鐘一筆；lab 叢集 36 個 Pod）：
@@ -133,7 +133,7 @@ python3 fallback.py --snapshots ./snapshots --last 20m --compare http://127.0.0.
 
 比較的時候要注意：**OpenCost 實際涵蓋的時間常常比你要求的短**（這次要求 15 分鐘、
 它回 12 分鐘），所以不能直接比總量，要各自除以自己涵蓋的時長換算成速率再比。
-`fallback.py` 已經這樣處理。
+`cost-report fallback` 已經這樣處理。
 
 **誤差的方向是固定的：宣告量法會低估「用量超過申請量」的工作負載**，因為 OpenCost 計價依
 `max(申請, 用量)`，而快照只看得到申請量。所以你的叢集有多少爆量的工作負載，就決定了誤差有多大。
@@ -163,7 +163,7 @@ python3 fallback.py --snapshots ./snapshots --last 20m --compare http://127.0.0.
 每一列明細都要帶 `basis`：`measured` / `interpolated` / `declared` / `prior_period` / `policy`，
 帳單上顯示一行「本期 X% 的成本以推估方式分攤」。爭議來的時候可以指著看，而不是靠記憶解釋。
 
-這些門檻已經實作在 `app/billing.py` 的 `billing_gate()`，出帳結論有三種：
+這些門檻已經實作在 `crates/cost-report-core/src/billing.rs` 的 `billing_gate()`，出帳結論有三種：
 
 | 覆蓋率 | 結論 | 意思 |
 |---|---|---|
@@ -182,7 +182,7 @@ python3 fallback.py --snapshots ./snapshots --last 20m --compare http://127.0.0.
 門檻擋不住的另一個問題是**時間**：Prometheus 的 retention 有限（這個環境是 7 天），
 所以「上個月的帳單」過一陣子就查不出來了，而且每次重查還可能因為資料過期而得到不同金額。
 
-`app/billing.py` 的 `seal_day()` 每天把已結束的日子封存成一份不可變的 JSON，附 SHA-256。
+`crates/cost-report-core/src/seals.rs` 的 `seal_day()` 每天把已結束的日子封存成一份不可變的 JSON，附 SHA-256。
 三個設計上的堅持：
 
 - **已封存就不覆寫。** 內容如果跟封存時不同，回報 `conflict` 讓人去處理，而不是安靜蓋掉。

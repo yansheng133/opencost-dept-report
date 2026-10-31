@@ -1,35 +1,27 @@
-# 白名單型：預設全部忽略，只放行明確列出的內容。
-# 新增檔案時要自己加一條放行，避免「不小心 commit 進去」。
+# Whitelist: everything is ignored unless listed here. A new top-level file
+# or directory must be added on purpose, so nothing slips into a commit.
 /*
 !/.gitignore
-!/.repo-audit-allow
+!/.dockerignore
+!/.github/
 !/LICENSE
 !/README.md
-!/Dockerfile
-!/build-images.sh
-!/snapshotter/Dockerfile
-!/deploy.sh
-!/app/
-!/app/app.py
-!/app/index.html
-!/app/billing.py
-!/app/test_billing.py
-!/app/ratecard.json
-!/k8s/
-!/k8s/*.yaml
+!/Cargo.toml
+!/Cargo.lock
+!/Containerfile
+!/build/
+!/charts/
+!/crates/
+!/deploy/
 !/docs/
-!/docs/*.md
-!/docs/dockerhub/
-!/docs/dockerhub/*.md
-!/docs/dockerhub/*.sh
-!/examples/
-!/examples/*.yaml
-!/examples/*.sh
-!/examples/*.js
-!/snapshotter/
-!/snapshotter/*.py
-!/snapshotter/*.yaml
-!/snapshotter/*.sh
-!/snapshotter/*.md
-# /app/ 整個放行，所以 Python 執行測試時產生的快取要另外擋
-__pycache__/
+!/extension/
+
+# Build output inside the listed directories.
+target/
+node_modules/
+/extension/dist-pkg/
+/extension/tmp/
+/extension/pkg/*/.shell
+/charts/*/charts/
+*.tgz
+.DS_Store

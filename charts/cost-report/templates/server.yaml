@@ -1,0 +1,145 @@
+{{- if .Values.seals.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "cost-report.fullname" . }}-seals
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cost-report.labels" . | nindent 4 }}
+  {{- if .Values.seals.persistence.keep }}
+  annotations:
+    # Sealed days are invoices; uninstalling the chart must not delete them.
+    helm.sh/resource-policy: keep
+  {{- end }}
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with .Values.seals.persistence.storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.seals.persistence.size }}
+---
+{{- end }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "cost-report.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cost-report.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+spec:
+  selector:
+    {{- include "cost-report.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+  ports:
+    - name: api
+      port: {{ .Values.aggregatedApi.port }}
+      targetPort: api
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "cost-report.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cost-report.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+spec:
+  replicas: 1
+  # One writer of the seals volume (ReadWriteOnce): replace, do not overlap.
+  strategy: {type: Recreate}
+  selector:
+    matchLabels:
+      {{- include "cost-report.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: server
+  template:
+    metadata:
+      labels:
+        {{- include "cost-report.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: server
+      annotations:
+        checksum/config: {{ include "cost-report.configJson" . | sha256sum }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: /metrics
+        {{- with .Values.server.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "cost-report.fullname" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: server
+          image: {{ include "cost-report.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["server"]
+          env:
+            - {name: COST_REPORT_CONFIG, value: /etc/cost-report/config/config.json}
+            - {name: COST_REPORT_RATECARD, value: /etc/cost-report/ratecard/ratecard.json}
+            - {name: COST_REPORT_TLS_CERT_FILE, value: /etc/cost-report/tls/tls.crt}
+            - {name: COST_REPORT_TLS_KEY_FILE, value: /etc/cost-report/tls/tls.key}
+            - {name: COST_REPORT_TLS_LISTEN_ADDR, value: "0.0.0.0:8443"}
+          ports:
+            - {name: api, containerPort: 8443}
+            - {name: http, containerPort: 8080}
+          # Readiness is the process, not OpenCost: an APIService without
+          # ready endpoints makes every `kubectl` in the cluster warn about
+          # discovery. "No data yet" is answered by the API itself (503 not_ready).
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 2
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            timeoutSeconds: 3
+          resources:
+            {{- toYaml .Values.server.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            - {name: config, mountPath: /etc/cost-report/config, readOnly: true}
+            - {name: ratecard, mountPath: /etc/cost-report/ratecard, readOnly: true}
+            - {name: tls, mountPath: /etc/cost-report/tls, readOnly: true}
+            {{- if .Values.seals.enabled }}
+            - {name: seals, mountPath: /seals}
+            {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "cost-report.fullname" . }}
+        - name: ratecard
+          configMap:
+            name: {{ default (printf "%s-ratecard" (include "cost-report.fullname" .)) .Values.rateCard.existingConfigMap }}
+        - name: tls
+          secret:
+            secretName: {{ include "cost-report.fullname" . }}-apiserver-tls
+            defaultMode: 0440
+        {{- if .Values.seals.enabled }}
+        - name: seals
+          persistentVolumeClaim:
+            claimName: {{ include "cost-report.fullname" . }}-seals
+        {{- end }}
+      {{- with .Values.server.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.server.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.server.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -1,0 +1,12 @@
+[package]
+name = "cost-report-core"
+description = "Department cost allocation from OpenCost: billing policy, coverage, series, seals, scoping. No network, no Kubernetes."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde_json.workspace = true
+sha2.workspace = true

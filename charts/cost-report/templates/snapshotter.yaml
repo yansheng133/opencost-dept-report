@@ -1,0 +1,134 @@
+{{- if .Values.snapshotter.enabled }}
+{{- $name := printf "%s-snapshotter" (include "cost-report.fullname" .) }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cost-report.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ printf "%s-snapshotter" (include "cost-report.clusterName" .) | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "cost-report.labels" . | nindent 4 }}
+rules:
+  # Requests and labels only; no writes, no Secrets. Without
+  # persistentvolumeclaims the snapshots' storage would always be empty, and
+  # empty looks exactly like "no PVCs": storage would silently cost 0.
+  - apiGroups: [""]
+    resources: [pods, namespaces, persistentvolumeclaims]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ printf "%s-snapshotter" (include "cost-report.clusterName" .) | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "cost-report.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ printf "%s-snapshotter" (include "cost-report.clusterName" .) | trunc 63 | trimSuffix "-" }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cost-report.labels" . | nindent 4 }}
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with .Values.snapshotter.persistence.storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.snapshotter.persistence.size }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cost-report.labels" . | nindent 4 }}
+    app.kubernetes.io/component: snapshotter
+spec:
+  # Read by the server only; no Ingress, no NodePort.
+  selector:
+    {{- include "cost-report.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: snapshotter
+  ports:
+    - {name: http, port: 80, targetPort: http}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cost-report.labels" . | nindent 4 }}
+    app.kubernetes.io/component: snapshotter
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels:
+      {{- include "cost-report.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: snapshotter
+  template:
+    metadata:
+      labels:
+        {{- include "cost-report.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: snapshotter
+    spec:
+      serviceAccountName: {{ $name }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: snapshotter
+          image: {{ include "cost-report.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["snapshotter"]
+          env:
+            - {name: OUT_DIR, value: /data}
+            - {name: INTERVAL, value: {{ .Values.snapshotter.intervalSeconds | quote }}}
+            - {name: DEPT_LABEL, value: {{ .Values.config.labels.department | quote }}}
+            - {name: ENV_LABEL, value: {{ .Values.config.labels.environment | quote }}}
+            - {name: RETENTION_DAYS, value: {{ .Values.snapshotter.retentionDays | quote }}}
+            - {name: LISTEN_ADDR, value: "0.0.0.0:8080"}
+          ports:
+            - {name: http, containerPort: 8080}
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 10
+          # /healthz fails when no snapshot was written for three intervals:
+          # "running but not writing" is the failure that eats the backup.
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            failureThreshold: 2
+          resources:
+            {{- toYaml .Values.snapshotter.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            - {name: data, mountPath: /data}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ $name }}
+{{- end }}

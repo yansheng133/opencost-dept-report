@@ -1,0 +1,178 @@
+# cost-report: department cost allocation from OpenCost.
+# No secrets go in this file; the backend needs none.
+
+image:
+  # Published by .github/workflows/image.yml (linux/amd64 and linux/arm64).
+  repository: ghcr.io/yansheng133/cost-report
+  # Required. Images are pulled by digest only, e.g. "sha256:<64 hex>".
+  digest: ""
+  # Informational only (shown in labels); never used to pull.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# What the report reads and how it attributes cost.
+config:
+  # Display name of this cluster in the page (for example the Rancher cluster name).
+  cluster: ""
+  # OpenCost's API (port 9003 of the opencost Service).
+  opencostUrl: http://opencost.opencost.svc.cluster.local:9003
+  # Prometheus that OpenCost reads. Used for coverage (gaps), scrape-target
+  # health and storage use. Empty: those are not measured and the page says so.
+  prometheusUrl: ""
+  # Scrape job of OpenCost in that Prometheus (coverage is its `up` series).
+  coverageJob: opencost
+  labels:
+    # Pod or namespace label naming the department (the pod's label wins).
+    department: cost-center
+    # Second dimension, e.g. production vs test.
+    environment: env
+    # Environment values with their own column; anything else is "other".
+    environments: [prod, dev]
+  # Departments in display order with their names. Each one also gets a
+  # ClusterRole cost-report-department-<id> (see rbac.departmentRoles).
+  # Departments found in the data but not listed here are shown by ID.
+  departments: []
+  #  - id: rd
+  #    name: 研發部
+  # Namespace names or prefixes of platform components (kept apart from
+  # unlabelled applications in "unallocated").
+  systemNamespaces:
+    - kube-system
+    - kube-public
+    - kube-node-lease
+    - cattle-
+    - cert-manager
+    - longhorn-system
+    - local-path-storage
+    - opencost
+    - prometheus-system
+    - cost-report
+  windows: [1h, 24h, 7d]
+  defaultWindow: 24h
+  # Sampling step of the usage chart per window. Below 5m usage reads as 0
+  # with a 60 s scrape interval.
+  seriesSteps:
+    1h: 5m
+    24h: 10m
+    7d: 1h
+  cacheTtlSeconds: 60
+  seriesTtlSeconds: 300
+  # OpenCost segments user-chosen series may request per minute (each
+  # segment opens connections to Prometheus; too many at once exhausts them).
+  seriesBudget: 300
+  timeouts:
+    opencostSeconds: 30
+    prometheusSeconds: 5
+  # Billing gate thresholds (policy: change them to your company's rules).
+  thresholds:
+    coverageOk: 99
+    coverageMark: 95
+    estimatedOk: 1
+    estimatedMark: 10
+    driftOk: 0.5
+    driftMark: 2
+    unallocatedMark: 20
+
+# Rate card: prices per vCPU hour, per GiB hour of RAM and of storage (2^30
+# bytes). Add a new version for every change and never edit an old one:
+# each period is billed at the version in force at its start. These must
+# match the prices OpenCost uses; the billing gate checks that.
+rateCard:
+  # Use an existing ConfigMap with key ratecard.json instead of the values below.
+  existingConfigMap: ""
+  currency: ""
+  note: ""
+  versions: []
+  #  - effective: "2026-01-01"
+  #    cpu: 1.0
+  #    ram: 0.25
+  #    storage: 0.001
+  #    author: platform-team
+  #    reason: hardware amortisation
+
+# Sealed billing days (one immutable file per finished UTC day).
+seals:
+  enabled: true
+  # Days back the sealer looks for unsealed finished days (Prometheus
+  # retention should cover this).
+  daysBack: 7
+  persistence:
+    size: 1Gi
+    storageClass: ""
+    # Keep the volume when the release is uninstalled: it holds invoices.
+    keep: true
+
+server:
+  resources:
+    requests: {cpu: 20m, memory: 32Mi}
+    limits: {memory: 256Mi}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  podAnnotations: {}
+
+# The backend serves its API as a Kubernetes aggregated API
+# (api.costreport.yansheng133.github.io/v1alpha1).
+aggregatedApi:
+  port: 8443
+
+rbac:
+  # ClusterRoles for people (bind them, or use deploy/rancher role templates):
+  #   cost-report-viewer-all         every department and cluster-wide numbers
+  #   cost-report-base               the resources only, no department
+  #   cost-report-department-<id>    base + one department (one per config.departments)
+  userRoles: true
+  departmentRoles: true
+
+# Declared-request snapshots: the second allocation basis when Prometheus
+# has gaps. Reads namespaces, PVCs and running pods; never Prometheus.
+snapshotter:
+  enabled: true
+  intervalSeconds: 300
+  retentionDays: 35
+  persistence:
+    # About 2 MiB a day for ~40 pods every 5 minutes.
+    size: 1Gi
+    storageClass: ""
+  resources:
+    requests: {cpu: 10m, memory: 32Mi}
+    limits: {memory: 256Mi}
+
+# Measures local-path PVC directories on every node so the report can show
+# claimed vs used storage. Only for local-path (hostPath) volumes: CSI
+# drivers such as Longhorn are measured by the kubelet already.
+# It mounts the local-path root read-only and runs as root with only
+# CAP_DAC_READ_SEARCH; Pod Security baseline/restricted forbid hostPath, so
+# the namespace must allow it (privileged).
+volumeUsage:
+  enabled: false
+  hostPath: /opt/local-path-provisioner
+  scanIntervalSeconds: 600
+  resources:
+    requests: {cpu: 10m, memory: 16Mi}
+    limits: {memory: 128Mi}
+  tolerations:
+    - operator: Exists
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile: {type: RuntimeDefault}
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities: {drop: ["ALL"]}
+
+# Ingress to the pods: the API server (8443) and Prometheus (metrics) only.
+# The API server reaches the backend from the host network, so the rule
+# allows the node CIDRs you list, or everything when empty.
+networkPolicy:
+  enabled: false
+  apiServerCidrs: []

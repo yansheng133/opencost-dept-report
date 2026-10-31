@@ -1,0 +1,49 @@
+{{- /*
+The backend's own permissions, and nothing more:
+
+1. read kube-system/extension-apiserver-authentication (request-header CA and
+   allowed names): built-in Role extension-apiserver-authentication-reader;
+2. create SubjectAccessReviews, to ask which departments a caller may see:
+   built-in ClusterRole system:auth-delegator (also tokenreviews/create).
+
+It reads no workloads, no Secrets and writes nothing in the cluster. Seals are
+files on its own volume.
+*/ -}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "cost-report.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cost-report.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ printf "cost-report-auth-reader-%s" .Release.Namespace | trunc 63 | trimSuffix "-" }}
+  namespace: kube-system
+  labels:
+    {{- include "cost-report.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: extension-apiserver-authentication-reader
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "cost-report.fullname" . }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ printf "%s-auth-delegator" (include "cost-report.clusterName" .) | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "cost-report.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "cost-report.fullname" . }}
+    namespace: {{ .Release.Namespace }}

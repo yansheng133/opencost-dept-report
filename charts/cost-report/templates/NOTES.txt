@@ -1,0 +1,24 @@
+cost-report {{ .Chart.AppVersion }} is installed in {{ .Release.Namespace }}.
+
+Check the aggregated API is available (AVAILABLE must be True):
+  kubectl get apiservice v1alpha1.api.costreport.yansheng133.github.io
+
+Ask it as yourself (needs one of the ClusterRoles below):
+  kubectl get --raw /apis/api.costreport.yansheng133.github.io/v1alpha1/config
+
+Give people access (cluster-scoped, so ClusterRoleBindings):
+  cost-report-viewer-all          every department and the cluster-wide numbers
+{{- range .Values.config.departments }}
+  cost-report-department-{{ .id }}{{ if .name }}   {{ .name }}{{ end }}
+{{- end }}
+In Rancher, use the cluster role templates in deploy/rancher/ of the repository.
+{{- if not .Values.config.prometheusUrl }}
+
+config.prometheusUrl is empty: coverage, scrape-target health and storage use
+are not measured, and the billing gate shows coverage as unknown.
+{{- end }}
+{{- if not .Values.rateCard.versions }}{{ if not .Values.rateCard.existingConfigMap }}
+
+No rate card: prices are implied from OpenCost's data and the price check is
+unknown. Add rateCard.versions with the prices OpenCost is configured with.
+{{- end }}{{ end }}

@@ -1,0 +1,16 @@
+image:
+  digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+config:
+  cluster: ci
+  prometheusUrl: http://prometheus-server.prometheus-system.svc:80
+  departments:
+    - {id: mfg, name: 製造部}
+    - {id: rd, name: 研發部}
+rateCard:
+  currency: TWD
+  versions:
+    - {effective: "2026-01-01", cpu: 1.0, ram: 0.25, storage: 0.001}
+volumeUsage:
+  enabled: true
+networkPolicy:
+  enabled: true

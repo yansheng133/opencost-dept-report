@@ -1,0 +1,64 @@
+{{- /*
+Who may see what. The API server checks the resource (reports, seals, ...);
+the backend then checks departments with SubjectAccessReviews:
+
+  get departments           (rule WITHOUT resourceNames)  every department and
+                                                          the cluster-wide numbers
+  get departments/<id>      (rule with resourceNames)     that department
+
+Bind these with ClusterRoleBindings (the resources are cluster-scoped), or in
+Rancher with the cluster role templates in deploy/rancher/.
+*/ -}}
+{{- $base := list "config" "reports" "series" "seals" "periods" "departments" }}
+{{- if .Values.rbac.userRoles }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cost-report-viewer-all
+  labels:
+    {{- include "cost-report.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["api.costreport.yansheng133.github.io"]
+    resources: {{ toJson $base }}
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cost-report-base
+  labels:
+    {{- include "cost-report.labels" . | nindent 4 }}
+rules:
+  # Reading the resources, but no department: on its own this shows nothing
+  # (403 no_department). Combine with a departments rule.
+  - apiGroups: ["api.costreport.yansheng133.github.io"]
+    resources: ["config", "reports", "series", "seals", "periods"]
+    verbs: ["get", "list"]
+  - apiGroups: ["api.costreport.yansheng133.github.io"]
+    resources: ["departments"]
+    verbs: ["list"]
+{{- end }}
+{{- if .Values.rbac.departmentRoles }}
+{{- range .Values.config.departments }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ printf "cost-report-department-%s" (toString .id) }}
+  labels:
+    {{- include "cost-report.labels" $ | nindent 4 }}
+  annotations:
+    cost-report.yansheng133.github.io/department-name: {{ default .id .name | quote }}
+rules:
+  - apiGroups: ["api.costreport.yansheng133.github.io"]
+    resources: ["config", "reports", "series", "seals", "periods"]
+    verbs: ["get", "list"]
+  - apiGroups: ["api.costreport.yansheng133.github.io"]
+    resources: ["departments"]
+    verbs: ["list"]
+  - apiGroups: ["api.costreport.yansheng133.github.io"]
+    resources: ["departments"]
+    resourceNames: [{{ toString .id | quote }}]
+    verbs: ["get"]
+{{- end }}
+{{- end }}

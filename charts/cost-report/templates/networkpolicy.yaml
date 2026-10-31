@@ -1,0 +1,52 @@
+{{- if .Values.networkPolicy.enabled }}
+# The server takes the aggregated API from the API server (host network, so
+# by node CIDR) and probes/metrics on 8080. The snapshotter only from the server.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "cost-report.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cost-report.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "cost-report.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: server
+  policyTypes: [Ingress]
+  ingress:
+    - ports:
+        - {port: 8443, protocol: TCP}
+      {{- with .Values.networkPolicy.apiServerCidrs }}
+      from:
+        {{- range . }}
+        - ipBlock: {cidr: {{ . | quote }}}
+        {{- end }}
+      {{- end }}
+    - ports:
+        - {port: 8080, protocol: TCP}
+{{- if .Values.snapshotter.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "cost-report.fullname" . }}-snapshotter
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cost-report.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "cost-report.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: snapshotter
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "cost-report.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: server
+      ports:
+        - {port: 8080, protocol: TCP}
+{{- end }}
+{{- end }}

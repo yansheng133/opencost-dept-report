@@ -1,0 +1,84 @@
+{{- if .Values.volumeUsage.enabled }}
+{{- /*
+Optional: measures local-path PVC directories on every node.
+
+What it can do, plainly: it mounts the node's local-path root read-only and
+can see every PVC's files on that node. It only stats them (sizes), never
+reads content or writes. It runs as root with every capability dropped except
+DAC_READ_SEARCH (skip read permission checks): database PVC directories are
+often mode 700, and without it they would be under-counted silently.
+Pod Security baseline and restricted forbid hostPath; the namespace must
+allow it.
+*/ -}}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "cost-report.fullname" . }}-volume-usage
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cost-report.labels" . | nindent 4 }}
+    app.kubernetes.io/component: volume-usage
+spec:
+  selector:
+    matchLabels:
+      {{- include "cost-report.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: volume-usage
+  template:
+    metadata:
+      labels:
+        {{- include "cost-report.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: volume-usage
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9102"
+        prometheus.io/path: /metrics
+    spec:
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.volumeUsage.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: collector
+          image: {{ include "cost-report.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["volume-usage"]
+          env:
+            - {name: VOLUME_ROOT, value: /volumes}
+            - {name: SCAN_INTERVAL, value: {{ .Values.volumeUsage.scanIntervalSeconds | quote }}}
+            - {name: LISTEN_ADDR, value: "0.0.0.0:9102"}
+            - name: NODE_NAME
+              valueFrom: {fieldRef: {fieldPath: spec.nodeName}}
+          ports:
+            - {name: metrics, containerPort: 9102}
+          readinessProbe:
+            httpGet: {path: /readyz, port: metrics}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /healthz, port: metrics}
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.volumeUsage.resources | nindent 12 }}
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+              add: ["DAC_READ_SEARCH"]
+          volumeMounts:
+            - {name: volumes, mountPath: /volumes, readOnly: true}
+      volumes:
+        - name: volumes
+          hostPath:
+            path: {{ .Values.volumeUsage.hostPath }}
+            type: Directory
+{{- end }}

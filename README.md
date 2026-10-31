@@ -1,303 +1,156 @@
 # opencost-dept-report
 
-把 [OpenCost](https://www.opencost.io/) 的原始數字，轉成**各部門該分攤多少、依據是什麼**的唯讀報表，
-跑在叢集裡，不依賴任何人的筆電。
+把 OpenCost 算出來的叢集成本，依部門標籤拆成各部門的帳，直接在 Rancher 裡看；每個人只看得到自己有權限的部門。
+
+> 2026-09 的 Python 版（單檔網頁、無認證）保留在 [`demo`](https://github.com/yansheng133/opencost-dept-report/tree/demo) 分支。`main` 是 Rust 重寫的版本，給正式環境用。
+
+## 它做什麼
+
+OpenCost 會算出每個工作負載花了多少錢，但要拿去跟部門收費，中間還差幾件事。這個專案補的就是這一段：
+
+| 問題 | 做法 |
+|---|---|
+| 這筆錢算誰的？ | 依 Pod（或所在 namespace）的部門標籤彙總，Pod 的標籤優先 |
+| 誰能看到哪些部門？ | 用 Kubernetes 的 RBAC 決定，跟叢集其他權限在同一個地方管 |
+| 這份數字可以拿去收費嗎？ | 出帳關卡逐項檢查：有沒有資料、量測覆蓋率、推估佔比、對帳差異、單價一致性、無法分攤佔比 |
+| 監控有斷層的時候怎麼辦？ | 量出缺了哪幾段，用宣告量快照補，並標成推估 |
+| 上個月的帳，下個月還查得到嗎？ | 每天結帳一次並封存，附雜湊，不會被覆寫 |
+| 申請的資源有沒有在用？ | 各部門使用率趨勢、每個工作負載的申請與實際用量、PVC 的申請容量與實際用量 |
+
+名詞：
+
+- **閒置**：節點有、但沒有任何工作負載申請的資源。可以獨立列帳（平台吸收），也可以按比例攤給部門。
+- **無法分攤**：沒有部門標籤的工作負載。系統元件與沒標籤的應用會分開列。
+- **覆蓋率**：要求的區間裡，有多少時間真的有量到資料。
+- **封存**：把一個已經結束的 UTC 日的帳凍結成一個檔案。
+
+## 運作方式
 
 ```
-瀏覽器 ──▶ cost-report（本服務，快取 60 秒）──▶ OpenCost API ──▶ Prometheus
+瀏覽器（Rancher 裡的「成本分攤」頁面）
+  │  以使用者自己的 Rancher 登入
+  ▼
+Rancher 代理 → 下游叢集的 Kubernetes API server（驗證身分、檢查 RBAC）
+  ▼  mTLS，使用者身分放在標頭
+cost-report（aggregated API）──► OpenCost、Prometheus
+  │  SubjectAccessReview：這個人可以看哪些部門？
+  ├──► cost-report-snapshotter（宣告量快照，只讀 API server）
+  └──► 封存（自己的 PVC）
 ```
 
-OpenCost 自己的 UI 是給平台團隊看的：它按 namespace 和工作負載呈現，沒有「這個部門要付多少」的視角，
-而且**經 Rancher 的服務代理打開是空白頁**。這個專案補上那一層。
+- 後端是 Kubernetes aggregated API（`api.costreport.yansheng133.github.io/v1alpha1`），沒有 Ingress、沒有自己的登入。只接受 API server 的 proxy 用戶端憑證帶來的身分。
+- 後端自己的權限只有兩項：讀 `kube-system/extension-apiserver-authentication`、建立 SubjectAccessReview。它不讀任何工作負載、不讀 Secret、不寫入叢集。
+- 快照器只讀 namespace、PVC、Running Pod；PVC 用量量測（選配）只讀節點上 local-path 目錄的檔案大小。
 
-跟原生 OpenCost 差在哪，見[〈跟原生 OpenCost 差在哪〉](#vs-opencost)。
-English: [How this differs from stock OpenCost](#vs-opencost-en).
+API 的完整說明見 [docs/api.md](docs/api.md)。
 
-## 畫面上有什麼
+## 安裝
 
-| 區塊 | 回答什麼問題 |
-|---|---|
-| **各部門的使用率趨勢** | 折線圖：各部門申請的資源有沒有在用、什麼時候在用。看得出日夜曲線、批次作業，以及長期貼在低點的浪費 |
-| **這份數字可以拿去收錢嗎** | 五項檢查（覆蓋率、推估佔比、對帳、單價一致性、標籤治理）逐項攤開，給出「可出帳／需標示／需核准」的結論 |
-| **你現在走到哪一階** | 四階成熟度：看得到成本 → 分得出部門 → 數字可信 → 能真的收錢。用實際資料判斷位置，並指出下一階缺什麼 |
-| 各部門應分攤金額 | 用量 × 單價 = 金額，附月推估。**閒置成本可切換「獨立列帳／按比例分攤」**，兩種做法總額相同 |
-| 正式 vs 測試 | 用第二個標籤（例如 `env`）再切一次。測試環境常被當成「不用算」 |
-| 每個工作負載付了多少、用了多少 | 申請量對實際用量，標出可回收的對象；也標出「效率低但其實在工作」的例外 |
-| **儲存空間：申請 vs 實際** | 每個 PVC 申請多少、實際用多少、金額裡有多少是為空著的空間付的；也標出用量超過申請量（local-path 不擋超用）的 PVC。實際用量要另外裝量測元件，見下方「PVC 實際用量」 |
-| 無法分攤的成本 | 沒有部門標籤的部分有多大，就是標籤治理的量化指標 |
-| 計價依據 | 單價、計價單位、本期用量；單價由資料反推，不寫死在程式裡 |
-| **指定某一天** | 日期選擇器，或直接點「帳期封存」表裡的日期。可以回頭看某一天完整的報表（限 Prometheus retention 之內） |
-| **資料完整度** | 本期有多少時間真的量到了、缺在哪幾段、有多少金額是推估的、監控目標有沒有掉線過 |
-| **帳期封存** | 已結帳凍結的日子、當天的出帳結論、雜湊完整性 |
-| **按月彙總** | 幾個月的帳單。**來源是封存不是 Prometheus**——後者的 retention 有限（這個環境 7 天），查不到幾個月前。缺日子的月份會明白標示「N 天的加總不是一個月的帳單」 |
-| **下一步該做什麼** | 根據這個叢集的實際資料算出來的具體行動，含 namespace 名稱與金額 |
+需要：Rancher 2.15、下游叢集上已經裝好 OpenCost 與它讀的 Prometheus。OpenCost 的計價單位、要加的 scrape job 等注意事項見 [docs/opencost-notes.md](docs/opencost-notes.md)。
 
-每個數字欄位的名稱滑過去會顯示說明（「核時」是什麼、「月推估」怎麼算的、
-「完整性」在驗什麼）。寫在畫面上會把表格撐爆，所以放在提示裡；同時綁了鍵盤焦點，
-**只綁 hover 的話觸控與鍵盤使用者永遠看不到**。
-
-畫面本身的操作：**側邊快速連結**（自動從區塊生成，會跟著捲動高亮）、**每一節都有固定錨點**
-（`#gate`、`#seals`…，可以把某一節的連結直接貼給同事）、**每一節可收合**（狀態記在瀏覽器裡，
-下次打開還在），**過長的表格先只顯示前幾列**。寬螢幕是左側欄，窄螢幕會變成頂部的橫向列。
-
-## 它示範的不只是數字
-
-很多團隊卡在「知道要做成本分攤，但不知道怎麼做、怎麼呈現」。所以這個畫面刻意不只是把成本攤開，
-而是把**一套 chargeback 實務**擺出來：
-
-- 每個區塊都寫明「**這一節你要做的決定是什麼**」——閒置成本誰吸收、測試環境要不要收費、
-  回收浪費的責任歸誰、沒人認領的成本最後誰付。這些都是政策決定，不是技術決定，
-  而它們決定了各部門帳單上的數字。
-- 帳單不是算出來就能發，**要先通過關卡**。畫面最上方把五項檢查攤開，
-  包含每一項的政策門檻與「為什麼要檢查它」。
-- 成熟度階梯說明**跳階不會成功**：標籤還沒治理好就開始收錢，時間會全花在吵數字。
-
-<a id="vs-opencost"></a>
-## 跟原生 OpenCost 差在哪
-
-**一句話：金額全部來自 OpenCost，這裡沒有重算任何成本。多出來的是上面那一層——
-把「每個東西花了多少」變成「可以向各部門收的帳單，以及這份帳單可不可信」。**
-OpenCost 回答「這個 Pod、namespace、標籤花了多少」；這個專案回答「各部門該付多少、
-數字完整到可以出帳了嗎、分不出去的錢誰付」。
-
-### 跟原生一樣（直接沿用 OpenCost，沒有改）
-
-- **成本計算**：每個工作負載的 CPU、記憶體、儲存金額都是 OpenCost 算的，原封不動。
-- **依標籤分攤**：用 `cost-center`、`env` 彙總，是 OpenCost 本身的 aggregate 功能。
-- **閒置成本**：獨立列帳或按比例攤回，用的是 OpenCost 的 `shareIdle` 選項。
-- **效率**：工作負載的 CPU／記憶體「申請 vs 實際」來自 OpenCost。
-
-### 這裡多做的（原生沒有）
-
-| 加了什麼 | 解決什麼問題 |
-|---|---|
-| 部門視角與月推估 | OpenCost 是技術視角；部門主管要的是「我這個月付多少」 |
-| **能不能出帳**（五項檢查） | 覆蓋率、推估佔比、對帳、單價一致性、標籤治理。OpenCost 只給數字，不告訴你數字能不能信 |
-| 資料完整度 | 跟 Prometheus 對：有沒有斷層、斷在哪。監控斷掉時 OpenCost 會**無聲少算** |
-| 斷層補值（快照器） | 用 API server 記錄的申請量當第二份依據補回，並標示為「推估」。OpenCost 不補 |
-| 版本化價目表 | 生效日、訂定者、原因，並檢查 OpenCost 實際用的單價跟價目表一致。OpenCost 只用當下設定的單價，沒有費率歷史 |
-| 帳期封存 | 每天結帳凍結並附雜湊，事後不能改。OpenCost 每次查詢都重算，資料超過 Prometheus 的保存期限後帳就無法重現 |
-| 按月彙總 | 從封存加總，所以 Prometheus 的資料過期之後仍然查得到 |
-| **儲存空間：申請 vs 實際** | OpenCost 照申請容量收費，沒有實際用量；local-path 的 PVC 連用量指標都沒有，所以另外附了量測元件 |
-| 無法分攤與下一步 | 分出「系統元件」與「沒標籤的應用」，列出該補標籤的 namespace 與金額 |
-| 使用率趨勢（自選取樣間隔） | 間隔與查詢額度都是實測出來的界線：查得太細會讓 OpenCost 用完連往 Prometheus 的連接埠，連帳務報表一起失敗 |
-
-### 刻意沒做的（也是跟商用產品的差距）
-
-- **沒有登入與權限**：跟 OpenCost 一樣，連得到就看得到全部部門。
-- **只看單一叢集**：沒有跨叢集彙總。
-- **沒有接雲端帳單**：OpenCost 有雲端成本功能，這裡沒有串。
-- **自己維護**：不在 OpenCost 上游，也沒有任何廠商的支援。
-
-### 這代表什麼
-
-原生 OpenCost 已經夠用來**讓大家看到成本**（showback）。
-要真的**向部門收錢**（chargeback），缺的正是上面那一層治理：數字可不可信、單價可不可追溯、
-帳出了之後會不會變。這個專案是「要收錢之前得補哪些東西」的可運作示範，不是可以直接交給客戶的產品。
-
-<a id="vs-opencost-en"></a>
-## How this differs from stock OpenCost
-
-**In short: every cost figure comes from OpenCost — nothing is recalculated here. What this project adds
-is the layer on top: turning "what each thing cost" into "a bill you can charge each department, and
-whether that bill can be trusted."** OpenCost answers *how much did this pod, namespace or label cost*.
-This project answers *how much does each department owe, is the data complete enough to bill, and who
-pays for what can't be attributed*.
-
-### Same as stock OpenCost (used as-is)
-
-- **Cost calculation**: CPU, memory and storage cost per workload are OpenCost's numbers, unchanged.
-- **Label-based allocation**: grouping by `cost-center` and `env` uses OpenCost's own aggregation.
-- **Idle cost**: listing it separately or sharing it out uses OpenCost's `shareIdle` option.
-- **Efficiency**: requested vs. actual CPU and memory per workload come from OpenCost.
-
-### What this adds (not in stock OpenCost)
-
-| Addition | Problem it solves |
-|---|---|
-| Department view and monthly projection | OpenCost is an engineering view; a department head wants "what do I pay this month" |
-| **Billing gate** (five checks) | Coverage, share of estimated cost, reconciliation, rate consistency, label governance. OpenCost gives you a number, not whether you can trust it |
-| Data completeness | Checked against Prometheus: are there gaps, and where. When monitoring drops out, OpenCost **under-counts silently** |
-| Gap backfill (snapshotter) | Fills gaps from the requests recorded by the API server as a second source, marked as "estimated". OpenCost does not backfill |
-| Versioned rate card | Effective date, owner and reason for each rate, plus a check that the rates OpenCost actually used match the card. OpenCost only uses the currently configured price, with no rate history |
-| Billing-period sealing | Each day is frozen with a hash so it can't be changed later. OpenCost recomputes on every query; once data ages out of Prometheus retention, the bill can no longer be reproduced |
-| Monthly roll-up | Summed from the seals, so it still works after the Prometheus data has expired |
-| **Storage: requested vs. actual** | OpenCost bills PVCs by requested capacity and has no actual-usage figure; local-path PVCs don't even have a usage metric, so an optional collector is included |
-| Unallocated cost and next steps | Separates platform components from unlabeled apps, and lists which namespaces need a label and how much money is involved |
-| Usage trend with selectable sampling interval | The allowed intervals and query budget are measured limits: queries that are too fine make OpenCost run out of ports to Prometheus and take the billing report down with them |
-
-### Deliberately not done (also the gap to a commercial product)
-
-- **No login or access control**: like OpenCost itself, anyone who can reach it sees every department.
-- **Single cluster only**: no cross-cluster roll-up.
-- **No cloud bill integration**: OpenCost has cloud cost features; they aren't wired in here.
-- **Self-maintained**: not part of upstream OpenCost and not covered by any vendor's support.
-
-### What this means
-
-Stock OpenCost is enough for **showback** — making cost visible. To actually **charge back** to
-departments, what's missing is exactly the governance layer above: can the numbers be trusted, can the
-rates be traced, and does a bill stay fixed once it's issued. This project is a working demonstration of
-what has to be added before you start charging — not a product to hand to a customer as-is.
-
-## 這個服務做了什麼、沒做什麼
-
-| 做了 | 沒做 |
-|---|---|
-| 查 OpenCost 的 allocation API，整理成部門視角 | 不自己算成本，也不改 OpenCost 的設定 |
-| 背景定期更新，畫面讀快取 | 不寫入任何資料，沒有資料庫 |
-| OpenCost 連不上時沿用上一份資料並在畫面標示 | 不會自己補資料（缺多少會講，補不補是政策） |
-| 單價由資料反推（金額 ÷ 用量） | 不在程式裡寫死單價 |
-| 價目表版本化（生效日、訂定者、原因） | 不自己決定單價該是多少 |
-| 每天封存帳期並凍結，附雜湊防竄改 | 不會覆寫已封存的帳期（內容不同時回報衝突） |
-| 跟資產成本對帳，差異超過門檻就擋帳 | 不自己修正差異 |
-| 資料有斷層時跟快照器要宣告量補值並標示來源 | 快照器沒有那段資料時**不補**，只說明 |
-| **沒有登入機制** | **不做認證與授權** |
-
-最後一列最重要：**誰連得到這個服務，就看得到全部部門的成本**，跟 OpenCost 本身一樣。
-畫面上的「只看某部門」只是看的方便，不是權限邊界。要限制存取，認證必須放在它前面，
-見 [`k8s/ingress-example.yaml`](k8s/ingress-example.yaml)。
-
-## 前提
-
-- 叢集裡已經有 OpenCost 與 Prometheus，而且 OpenCost 算得出成本。
-- 工作負載或 namespace 有用來分攤的標籤，預設是 `cost-center`（第二維度預設 `env`）。
-- 看得到報表的人，你已經決定要不要限制。
-
-## 部署
-
-映像檔是多架構的（`linux/amd64` ＋ `linux/arm64`），直接部署即可：
+### 1. 後端（下游叢集）
 
 ```bash
-KCFG=<kubeconfig 路徑> bash deploy.sh                    # 先看會做什麼（dry-run）
-KCFG=<kubeconfig 路徑> bash deploy.sh --apply            # 部署報表服務
-KCFG=<kubeconfig 路徑> bash snapshotter/deploy.sh --apply # 部署快照器（選用）
+helm install cost-report charts/cost-report -n cost-report --create-namespace -f my-values.yaml
+kubectl get apiservice v1alpha1.api.costreport.yansheng133.github.io   # AVAILABLE 要是 True
 ```
 
-腳本會自己處理兩件容易踩的事：**選 StorageClass**（叢集不一定有預設的，沒有預設又有多個候選
-就直接拒絕並列出可用的，而不是讓 PVC 無聲 Pending 到 rollout 逾時），以及**建立價目表 ConfigMap**。
+`my-values.yaml` 至少要有：
 
-換版本或換成自建的 registry：
-
-```bash
-IMAGE_TAG=0.10.0 KCFG=… bash deploy.sh --apply
-IMAGE=myregistry.local/cost-report:1.2.3 KCFG=… bash deploy.sh --apply
+```yaml
+image:
+  digest: sha256:<image workflow 產出的 digest>   # 一律用 digest，不用 tag
+config:
+  cluster: prod-east
+  prometheusUrl: http://prometheus-server.prometheus-system.svc:80
+  departments:
+    - {id: mfg, name: 製造部}
+    - {id: rd, name: 研發部}
+rateCard:
+  currency: TWD
+  versions:
+    - {effective: "2026-01-01", cpu: 1.0, ram: 0.25, storage: 0.001}
 ```
 
-### PVC 實際用量（選配）
+- `rateCard` 的單價必須跟 OpenCost 設定的一致（每 vCPU 小時、每 GiB 小時記憶體、每 GiB 小時儲存），出帳關卡會檢查。調價時**新增一個版本**，不要改舊的。價目表改了不用重啟。
+- 沒有預設 StorageClass 的叢集，要設 `seals.persistence.storageClass` 與 `snapshotter.persistence.storageClass`。
+- 用 local-path 的叢集可以開 `volumeUsage.enabled`，才看得到 PVC 的實際用量（Longhorn 等 CSI 儲存不需要）。它要掛 hostPath，namespace 不能套 Pod Security baseline／restricted。
+- 所有設定見 [charts/cost-report/values.yaml](charts/cost-report/values.yaml)。
 
-OpenCost 照 PVC **申請的容量**收費。要在報表上看到「申請 vs 實際」，得有實際用量的數字。
-用 Longhorn 或其他 CSI 儲存的叢集，kubelet 本身就會量；**local-path 不會**——它的 PV 是節點上的一個目錄（hostPath），
-kubelet 的 metrics 與 stats 裡都沒有這些 PVC，查詢不會出錯，只是回傳空的。
+### 2. 權限
 
-所以另外附了一個量測元件（[`k8s/volume-usage.yaml`](k8s/volume-usage.yaml)）：每台節點一個 Pod，
-每 10 分鐘像 `du` 一樣量一次每個 PVC 目錄，給 Prometheus 抓（`cost_report_pvc_used_bytes`）。
-程式就在報表的映像檔裡，不用另外建置。
+資源都是叢集層級，所以用 ClusterRoleBinding，或 Rancher 的叢集角色。
 
-```bash
-VOLUME_USAGE=1 KCFG=… bash deploy.sh --apply
-```
-
-**裝之前要想清楚的權限**：它把節點的 `/opt/local-path-provisioner` 以唯讀掛進容器，
-看得到該節點上每一個 PVC 的檔案（程式只讀大小，不讀內容）；以 root 執行但只留 `DAC_READ_SEARCH`，
-否則權限 700 的資料庫目錄會量不到而少算。Pod Security Admission 的 baseline 與 restricted 都不允許 hostPath，
-所以預設不裝。沒裝的話報表照常，儲存那一節會寫「沒有量」，不會把空的當成 0。
-
-### 自己建置映像檔
-
-```bash
-bash build-images.sh                 # 只建置不推送，驗證 Dockerfile
-REGISTRY=<你的帳號> bash build-images.sh --push
-```
-
-多架構**一定要用 buildx 的 container driver**：預設的 docker driver 一次只產得出一個架構，
-而且不會明講，只會安靜地推上去一個單架構的映像檔——別人在另一種 CPU 上拉下來才會發現。
-腳本會自己建立 builder，推送完還會把實際的架構列出來給你核對。
-
-### 程式碼為什麼不再放 ConfigMap
-
-早期版本把 `.py` 放進 ConfigMap 掛載執行，好處是不必 registry。但那樣沒有版本、沒有
-不可變性，也沒辦法告訴別人「你跑的是哪一版」。**價目表仍然是 ConfigMap**——單價是政策不是
-程式，改價不該需要重新建置映像檔。
-
-## 怎麼存取
-
-| 方式 | 說明 |
-|---|---|
-| `kubectl -n cost-report port-forward svc/cost-report 8088:80` | 自己看，最快 |
-| Rancher 服務代理 | `<Rancher>/k8s/clusters/<叢集 ID>/api/v1/namespaces/cost-report/services/http:cost-report:80/proxy/`。**沿用 Rancher 的登入與 Project 權限**，不必另開對外入口。網址結尾的斜線不能省，頁面用相對路徑取資料 |
-| Ingress | 見 `k8s/ingress-example.yaml`，裡面有三種認證做法與稽核缺口 |
-
-## 設定
-
-| 環境變數 | 預設 | 說明 |
+| ClusterRole | 給誰 | 看得到 |
 |---|---|---|
-| `OPENCOST_URL` | `http://opencost.opencost.svc.cluster.local:9003` | OpenCost API |
-| `CACHE_TTL` | `60` | 背景更新間隔（秒） |
-| `WINDOWS` | `1h,24h,7d` | 畫面可選的區間。**其他值會被拒絕**，避免有人下超大查詢把 Prometheus 打爆 |
-| `DEFAULT_WINDOW` | `24h` | 預設區間 |
-| `CLUSTER_LABEL` | 空 | 畫面上顯示的叢集名稱 |
-| `SERIES_STEPS` | `1h=5m,24h=10m,7d=1h` | 使用率折線圖每個區間的**預設**取樣間隔。點太密看不出趨勢，太疏會把日夜曲線抹平 |
-| `SERIES_TTL` | `300` | 使用者自選取樣間隔的結果快取幾秒 |
-| `SERIES_BUDGET` | `300` | 使用者自選取樣間隔時，60 秒內最多讓 OpenCost 算幾段（理由見下方 `/api/series`） |
-| `SYSTEM_NS_PREFIXES` | `kube-system,cattle-,…` | 這些 namespace 的元件不列進工作負載表（仍計入「無法分攤」） |
-| `PROM_URL` | `http://prometheus-server.prometheus-system.svc.cluster.local:80` | 量資料完整度、PVC 容量與實際用量用。連不上只是少一塊資訊，報表照常 |
-| `COVERAGE_JOB` | `opencost` | 用哪個 scrape job 判斷「這段有沒有量到」 |
-| `PROM_TIMEOUT` | `5` | 問 Prometheus 的逾時。刻意比主逾時短：位址設錯不該拖慢報表本身 |
-| `RATECARD_PATH` | `/config/ratecard.json` | 價目表。沒有的話單價改用反推，畫面會註明 |
-| `SEAL_DIR` | `/seals` | 帳期封存的存放目錄（要掛持久化的磁碟） |
-| `SEAL_ENABLED` | `1` | 設成 `0` 關閉自動封存 |
-| `SNAPSHOTTER_URL` | `http://cost-snapshotter.cost-report.svc.cluster.local:80` | 斷層補值的來源。留空就不補 |
+| `cost-report-viewer-all` | 平台、FinOps、財務 | 全部部門，以及閒置、無法分攤、對帳、監控目標 |
+| `cost-report-department-<代號>` | 部門主管 | 只有那個部門（每個 `config.departments` 一個） |
+| `cost-report-base` | 要自己組權限的人 | 單獨綁沒有作用，要另外加部門規則 |
 
-## 端點
+Rancher 的叢集角色範本在 [deploy/rancher/roletemplates.yaml](deploy/rancher/roletemplates.yaml)，套用到 local 叢集後，在叢集的「成員」頁面加人。
 
-| 路徑 | 用途 |
+判斷方式：後端替呼叫者問 API server「可不可以 `get departments/<代號>`」。規則**沒有** `resourceNames` 就是全部部門。所以權限的稽核、撤銷都跟其他 Kubernetes 權限一樣，30 秒內生效。
+
+### 3. Rancher UI extension
+
+在 Rancher 的 Extensions → Manage Repositories 加入 `https://yansheng133.github.io/opencost-dept-report`，安裝 **Cost allocation**（`cost-report-ext`）。左側選單會出現「成本分攤」，有兩頁：
+
+- **部門成本**：出帳關卡、各部門金額（閒置獨立列帳或按比例分攤）、使用率趨勢、正式與測試環境、工作負載、儲存空間、無法分攤、資料可信度、待處理事項、計價依據。
+- **帳期**：每日封存與按月彙總。
+
+頁面會在使用者看得到的叢集裡找有裝 cost-report 的；有好幾座時可以切換。開發與建置見 [extension/README.md](extension/README.md)。
+
+## 資料可信度的設計
+
+- **覆蓋率的分母是要求的區間**，不是 OpenCost 回傳的區間。分母選錯的話，資料最少的時候看起來最完美。
+- **斷層用宣告量補**：快照器每 5 分鐘記下每個 Pod 的資源申請量與部門。斷層期間的成本＝宣告的資源小時數 × 當時生效的單價，帳上標成推估。宣告量法會低估用量超過申請量的工作負載，誤差可以用 `cost-report fallback --compare` 在資料完整的期間量出來。詳見 [docs/data-gaps.md](docs/data-gaps.md)。
+- **對帳用含閒置的總額**跟資產成本比。不含閒置會看起來短少兩成以上。
+- **封存不覆寫**：同一天再封一次，內容不同就回報衝突。列表時重算雜湊，被改過的會標出來，整個月因此不能出帳。月報缺任何一天也不能出帳。
+- **使用率序列不內插**：沒有資料的區段讓折線斷開。
+- **自選取樣間隔有額度**：OpenCost 連續跑細的分段查詢會用完連往 Prometheus 的連接埠，連帳務報表都會失敗，所以一分鐘內有段數上限。
+
+## 限制
+
+- 一座叢集一套後端，一個副本（封存寫在 ReadWriteOnce 的 PVC）。
+- 帳期以 UTC 日切。
+- 只讀：價目表、部門名稱、門檻都在 chart 的 values 裡改。
+- 部門代號就是標籤值，只接受小寫英數與 `-`（它也是 ClusterRole 名稱的一部分）。
+- 社群專案，不在 SUSE 的支援範圍內。
+
+## 開發
+
+```bash
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+
+cd extension && yarn install --frozen-lockfile && yarn test && yarn build-pkg cost-report-ext
+
+helm lint charts/cost-report -f charts/cost-report/ci/ci-values.yaml
+```
+
+本機試後端（不需要叢集，但要連得到 OpenCost）：
+
+```bash
+COST_REPORT_DEV_SCOPES='finance=*;rd-manager=rd' COST_REPORT_CONFIG=config.json \
+  cargo run -p cost-report -- server
+curl -H 'X-Remote-User: rd-manager' localhost:8080/apis/api.costreport.yansheng133.github.io/v1alpha1/reports
+```
+
+`COST_REPORT_DEV_SCOPES` 會無條件相信 `X-Remote-User`，只能在本機用；在叢集裡設了會拒絕啟動。
+
+發布：打 `vX.Y.Z` tag 後，`image` workflow 在 x86-64 與 ARM64 上各自原生建置映像檔、推到 GHCR、用 cosign 簽章並附 SBOM；`publish` workflow 把 extension 與 chart 加進 `gh-pages` 的 Helm repo。
+
+## 目錄
+
+| 路徑 | 說明 |
 |---|---|
-| `GET /` | 報表畫面 |
-| `GET /api/report?window=24h` | JSON，給其他系統取用 |
-| `GET /api/report?day=2026-09-24` | **指定某一天**的完整報表。只接受整天，所以不會有人下超大的查詢把 Prometheus 打爆 |
-| `GET /api/seals` | 已封存的帳期清單，含雜湊完整性驗證 |
-| `GET /api/series?window=24h&step=5m` | 只要使用率折線圖，自己挑取樣間隔（也接受 `day=`）。只收白名單裡的組合：不小於 5 分鐘（Prometheus 每 60 秒抓一次，更細會算出 0 或假下凹）、一張圖不超過 288 點。60 秒內合計超過 `SERIES_BUDGET` 段回 **429** 並帶 `Retry-After`——實測連續兩個大查詢會讓 OpenCost 用完連往 Prometheus 的連接埠（`cannot assign requested address`），**連帳務報表都一起失敗** |
-| `GET /api/periods` | **按月彙總的帳期**。來源是封存不是 Prometheus，所以查得到 retention 以外的月份 |
-| `GET /api/seal?day=YYYY-MM-DD` | 單一帳期的完整封存內容 |
-| `GET /healthz` | liveness：行程活著就回 200（OpenCost 掛掉不重啟自己） |
-| `GET /readyz` | readiness：成功抓到第一份資料才回 200 |
-
-## 其他檔案
-
-| 路徑 | 內容 |
-|---|---|
-| `examples/demo-workloads.yaml` | 示範用工作負載：日夜曲線、記憶體浪費、沒有標籤的三種情況 |
-| `examples/precheck.sh` | demo 前的健康檢查，逐項 PASS／FAIL |
-| `examples/ui-smoke.js` | 畫面的冒煙測試（導覽、收合、錨點、三種寬度）。需要 Playwright，是唯一用到外部套件的東西 |
-| `examples/export-by-dept.sh` | 依部門匯出 CSV，`--dept` 可出單一部門逐一工作負載 |
-| `docs/opencost-notes.md` | **實機量測過的 OpenCost 行為與陷阱**，比這份 README 更值得先看 |
-| `docs/data-gaps.md` | **監控斷線時成本怎麼分攤**：降級階梯、來源標記、出帳門檻 |
-| `app/billing.py` | 計價政策：價目表、出帳門檻、帳期封存、對帳。刻意不碰網路，所以測得動 |
-| `app/ratecard.json` | 價目表範例（版本化，含生效日與調整原因） |
-| `app/test_billing.py` | 計價政策的測試，`python3 test_billing.py`，不需要叢集 |
-| `app/storage.py`、`app/volume_usage.py` | 儲存空間「申請 vs 實際」的併表邏輯，以及在節點上量 PVC 目錄的量測程式 |
-| `app/test_storage.py` | 上面兩支的測試（稀疏檔、硬連結、讀不到的目錄、沒量到 ≠ 0），不需要叢集 |
-| `k8s/volume-usage.yaml` | 選配的 PVC 用量量測 DaemonSet，開頭寫了它需要的權限 |
-| `snapshotter/` | 宣告量快照器：只讀 API server 的第二份分攤依據，Prometheus 掛掉時還有數字可用 |
-| `build-images.sh` | 建置並推送兩個多架構映像檔（amd64／arm64） |
-| `docs/dockerhub/` | Docker Hub 的倉庫描述與更新腳本（描述只放導向，不複製 README——那會變成第三個要同步的副本） |
-| `Dockerfile`、`snapshotter/Dockerfile` | 兩個服務各自的映像檔定義 |
-
-## 映像檔
-
-| | |
-|---|---|
-| 報表服務 | `docker.io/yansheng133/cost-report:0.10.0` |
-| 快照器 | `docker.io/yansheng133/cost-snapshotter:0.10.0` |
-| 架構 | `linux/amd64`、`linux/arm64` |
-| 基底 | `registry.suse.com/bci/python:3.12`，非 root（UID 1000）執行 |
-
-## 需求
-
-- Python 3.11 以上（只用標準函式庫，沒有任何相依套件）
-- Kubernetes 1.25 以上；在 RKE2 1.35 上驗證過
-- OpenCost 1.121 系列；Prometheus 3.x
+| `crates/cost-report-core` | 純邏輯，不碰網路：價目表、出帳關卡、對帳、封存與月報、覆蓋率、使用率序列、儲存、權限範圍、宣告量、PVC 用量量測 |
+| `crates/cost-report` | 執行檔：`server`（aggregated API）、`snapshotter`、`volume-usage`、`fallback` |
+| `extension` | Rancher UI extension `cost-report-ext` |
+| `charts/cost-report` | Helm chart |
+| `deploy/rancher` | Rancher 叢集角色範本 |
+| `Containerfile`、`build/` | 容器映像檔（SUSE BCI Micro、非 root） |
+| `docs` | API、OpenCost 的注意事項、資料斷層的處理 |
 
 ## 授權
 
