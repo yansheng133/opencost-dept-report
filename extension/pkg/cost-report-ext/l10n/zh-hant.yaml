@@ -223,10 +223,10 @@ costReport:
     noTimes: 分段資料沒有可用的時間。
     note: "每 {step}一個點，共 {count} 點；時間是這台電腦的時區（{zone}）。"
     missing: "{count} 段沒有資料，折線在那裡斷開。"
-    partial: "虛線的段落沒有涵蓋完整的取樣間隔，數字會偏低。"
+    partial: "虛線的段落沒有涵蓋完整的取樣間隔，代表性較低。"
     tipFrom: "{start} 起 {minutes} 分鐘"
     tipNoData: 這個時段沒有量到資料
-    tipPartial: "這一段沒有涵蓋完整的取樣間隔，數字會偏低"
+    tipPartial: "這一段沒有涵蓋完整的取樣間隔，代表性較低"
     tipNoValue: 沒有資料
     tipCpu: "（申請 {req} 核，用 {use}）"
     aria: 各部門使用率隨時間變化
@@ -323,8 +323,8 @@ costReport:
         title: 用量後面有＋
         text: 量的時候有檔案或目錄讀不到，實際用量可能比畫面上的數字高。
       lastScan:
-        title: 量測時間
-        text: "最近一次量測在 {at}。新寫入的資料要等下一次量測才會反映。"
+        title: 量測元件執行時間
+        text: "量測元件最後執行於 {at}。新寫入的資料要等下一次量測才會反映。"
     summary: "{count} 個 PVC，{amount} {currency}"
     emptyDept: "{name}在這段期間沒有 PVC。"
   unalloc:
@@ -393,7 +393,8 @@ costReport:
     reconNoteScaled: "分攤總額 {allocated} vs 資產成本 {assets}（OpenCost 替節點計價 {assetsMinutes} 分鐘的 {measured}，換算成 {minutes} 分鐘；{byType}）。對帳要用含閒置的總額。"
     listSep: "、"
     targetChanged: "目標數有變動（{min}～{max}）"
-    edgeList: "資料開頭／結尾"
+    edgeList: "資料開始或結束時的抓取空檔（已含在涵蓋時間內）"
+    edgeListNote: "{list}。這段時間算在涵蓋時間裡，不算缺漏。"
     edgeListValue: "{minutes} 分鐘"
   actions:
     title: 待處理事項

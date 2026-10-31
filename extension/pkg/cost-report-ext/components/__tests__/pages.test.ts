@@ -331,6 +331,18 @@ describe('部門成本', () => {
     expect(w.findAll('#usage path.cr-path').length).toBeGreaterThanOrEqual(2);
     w.unmount();
   });
+
+  it('a step this period does not offer is dropped from the URL', async() => {
+    mockQuery = { step: '7m' };
+    const asked = serve({
+      [GV]: [200, {}], [`${ GV }/config`]: [200, config], [`${ GV }/reports`]: [200, report()]
+    });
+    const w = await mountPage('Report');
+
+    expect(asked.some((u) => u.includes('/series'))).toBe(false);
+    expect(mockReplace).toHaveBeenCalledWith({ query: {} });
+    w.unmount();
+  });
 });
 
 describe('帳期', () => {

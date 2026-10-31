@@ -68,7 +68,7 @@ export default defineComponent({
         });
         if (edges.length) {
           out.push({
-            item: t(`${ k }.edgeList`), value: t(`${ k }.edgeListValue`, { minutes: Math.round(edges.reduce((a, g) => a + g.minutes, 0)) }), note: edges.map((g) => gapText(t, g)).join('; ')
+            item: t(`${ k }.edgeList`), value: t(`${ k }.edgeListValue`, { minutes: Math.round(edges.reduce((a, g) => a + g.minutes, 0)) }), note: t(`${ k }.edgeListNote`, { list: edges.map((g) => gapText(t, g)).join(t(`${ k }.listSep`)) })
           });
         }
       }

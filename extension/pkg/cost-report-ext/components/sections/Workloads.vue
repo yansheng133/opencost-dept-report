@@ -5,6 +5,7 @@ import CrSection from '../CrSection.vue';
 import Help from '../Help.vue';
 import DeptTag from '../DeptTag.vue';
 import Eff from '../Eff.vue';
+import EffLegend from '../EffLegend.vue';
 import MoreRow from '../MoreRow.vue';
 import { useReportContext } from '../../composables/useReportContext';
 import { filterWorkloads } from '../../utils/scope';
@@ -19,7 +20,7 @@ export default defineComponent({
   name: 'CostReportWorkloads',
 
   components: {
-    CrSection, Help, DeptTag, Eff, MoreRow
+    CrSection, Help, DeptTag, Eff, EffLegend, MoreRow
   },
 
   props: {
@@ -57,10 +58,7 @@ export default defineComponent({
     :summary="summary"
     :description="ctx.t('costReport.workloads.description')"
   >
-    <p class="cr-eff-legend">
-      <span><i class="over" />{{ ctx.t('costReport.workloads.legendOver') }}</span>
-      <span><i class="under" />{{ ctx.t('costReport.workloads.legendUnder') }}</span>
-    </p>
+    <EffLegend />
     <div class="cr-table-wrap">
       <table class="sortable-table cr-table">
         <thead>
@@ -132,19 +130,13 @@ export default defineComponent({
               {{ fmtCores(w.cpuReq) }} → {{ fmtCores(w.cpuUse, w.cpuEff) }}
             </td>
             <td>
-              <Eff
-                :value="w.cpuEff"
-                :color="ctx.depts.color(w.dept)"
-              />
+              <Eff :value="w.cpuEff" />
             </td>
             <td class="cr-num">
               {{ fmtMiB(w.ramReqMi) }} → {{ fmtMiB(w.ramUseMi, w.ramEff) }} MiB
             </td>
             <td>
-              <Eff
-                :value="w.ramEff"
-                :color="ctx.depts.color(w.dept)"
-              />
+              <Eff :value="w.ramEff" />
             </td>
             <td class="cr-num">
               {{ fmtMoney(w.total) }}

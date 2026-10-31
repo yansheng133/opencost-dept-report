@@ -223,10 +223,10 @@ costReport:
     noTimes: The segments have no usable times.
     note: "One point every {step}, {count, plural, =1 {1 point} other {# points}}; times are in this computer’s time zone ({zone})."
     missing: "{count, plural, =1 {1 segment has} other {# segments have}} no data; the lines break there."
-    partial: "Dashed segments do not cover a full interval, so they read low."
+    partial: "Dashed segments do not cover a full interval, so they are less representative."
     tipFrom: "{start}, {minutes} min"
     tipNoData: No data measured in this segment
-    tipPartial: "This segment does not cover a full interval, so it reads low"
+    tipPartial: "This segment does not cover a full interval, so it is less representative"
     tipNoValue: no data
     tipCpu: " (requested {req} cores, used {use})"
     aria: Usage per department over time
@@ -285,7 +285,7 @@ costReport:
     summaryTop: "{count, plural, =1 {1 workload} other {# workloads}}; highest {name} {amount} {currency}"
     noRequest: "No request"
     legendOver: "Above the request (capacity risk)"
-    legendUnder: "Below 10 % (barely used)"
+    legendUnder: "Below 10% (barely used)"
   storage:
     title: "Storage: requested vs used"
     description: "Cost is requested capacity × hours mounted × rate, whatever is stored. “Paid for empty space” uses the period’s peak usage."
@@ -323,8 +323,8 @@ costReport:
         title: Usage with +
         text: Some files or directories could not be read; actual usage may be higher.
       lastScan:
-        title: Measured at
-        text: "Last measured at {at}. New data shows after the next measurement."
+        title: Collector run
+        text: "Collector last ran at {at}. New data shows after the next measurement."
     summary: "{count, plural, =1 {1 PVC} other {# PVCs}}, {amount} {currency}"
     emptyDept: "{name} had no PVC in this period."
   unalloc:
@@ -393,7 +393,8 @@ costReport:
     reconNoteScaled: "Allocated {allocated} vs asset cost {assets} (OpenCost priced the nodes at {measured} over {assetsMinutes} min, scaled to {minutes} min; {byType}). Reconcile with idle included."
     listSep: ", "
     targetChanged: "Number of targets changed ({min}–{max})"
-    edgeList: "Start / end of data"
+    edgeList: "Scrape gap where data starts or ends (inside the covered time)"
+    edgeListNote: "{list}. This time counts as covered, not as missing."
     edgeListValue: "{minutes} min"
   actions:
     title: To do

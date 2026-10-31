@@ -146,6 +146,11 @@ export default defineComponent({
 
       if (want) {
         load(want);
+      } else if (chosen()) {
+        // A step this period does not offer (or the default) leaves the URL.
+        const ok = (r.series?.options || []).includes(chosen() as string);
+
+        setStepInRoute(ok ? chosen() : null, r.series?.defaultStep);
       }
     }, { immediate: true });
 
@@ -203,8 +208,12 @@ export default defineComponent({
       return list.length ? ctx.value.t(`costReport.usage.summaryAvg.${ metric.value }`, { list: list.map((a) => `${ ctx.value.depts.name(a.id) } ${ pctValue(a.avg) }`).join(' · ') }) : ctx.value.t('costReport.usage.summaryNone');
     });
 
+    // Later lines are drawn thinner and a little see-through, so a line
+    // lying on top of another does not hide it.
+    const lineStyle = (i: number) => ({ strokeWidth: Math.max(1.25, 2.5 - i * 0.35), strokeOpacity: 0.85 });
+
     return {
-      summary, pctValue, fmtCores, ctx, metric, series, busy, waiting, pending, failure, chart, gaps, tip, hover, move, load, stepText, pathOf, fmtLocal, BOX, zone: timeZone()
+      lineStyle, summary, pctValue, fmtCores, ctx, metric, series, busy, waiting, pending, failure, chart, gaps, tip, hover, move, load, stepText, pathOf, fmtLocal, BOX, zone: timeZone()
     };
   },
 });
@@ -311,7 +320,7 @@ export default defineComponent({
           class="cr-axis"
         >{{ fmtLocal(tk.start, tk.withDate) }}</text>
         <g
-          v-for="l in chart.lines"
+          v-for="(l, li) in chart.lines"
           :key="l.id"
         >
           <template
@@ -329,6 +338,7 @@ export default defineComponent({
               v-else
               :d="pathOf(seg)"
               :stroke="ctx.depts.color(l.id)"
+              :style="lineStyle(li)"
               class="cr-path"
             />
             <template v-if="l.marks && seg.length > 1">
@@ -350,6 +360,7 @@ export default defineComponent({
               v-if="d.from"
               :d="pathOf([d.from, d.to])"
               :stroke="ctx.depts.color(l.id)"
+              :style="lineStyle(li)"
               class="cr-path cr-partial"
             />
             <circle

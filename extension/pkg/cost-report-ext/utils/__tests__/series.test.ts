@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
 import {
-  averages, emptySegments, buildChart, partialIndex, spreadLabels, timeTicks, tickInterval, timedPoints, valueOf, wantedStep, nearestPoint, xOf, BOX
+  averages, emptySegments, buildChart, yScale, partialIndex, spreadLabels, timeTicks, tickInterval, timedPoints, valueOf, wantedStep, nearestPoint, xOf, BOX
 } from '../series';
 import type { Series, SeriesPoint } from '../types';
 
@@ -11,6 +11,21 @@ const pt = (min: number, rd: number | null, minutes = 10): SeriesPoint => ({
 });
 const series = (points: SeriesPoint[], step = 10): Series => ({
   step: `${ step }m`, stepMinutes: step, points, covered: points.filter((p) => p.depts).length, expected: points.length, options: ['5m', '10m'], defaultStep: '10m'
+});
+
+describe('yScale', () => {
+  it('leaves 20% headroom over the highest value, at least 5%', () => {
+    expect(yScale(0)).toStrictEqual({ top: 6, step: 2 });
+    expect(yScale(0.4)).toStrictEqual({ top: 6, step: 2 });
+    expect(yScale(8)).toStrictEqual({ top: 10, step: 5 });
+    expect(yScale(15)).toStrictEqual({ top: 20, step: 5 });
+    expect(yScale(50)).toStrictEqual({ top: 60, step: 20 });
+  });
+
+  it('stops at 100% unless a value is above it', () => {
+    expect(yScale(90)).toStrictEqual({ top: 100, step: 25 });
+    expect(yScale(130)).toStrictEqual({ top: 200, step: 50 });
+  });
 });
 
 describe('buildChart', () => {
@@ -24,7 +39,9 @@ describe('buildChart', () => {
 
     expect(xs[1] - xs[0]).toBeCloseTo((xs[3] - xs[2]));
     expect(xs[2] - xs[1]).toBeCloseTo(2 * (xs[1] - xs[0]));
-    expect(c.maxY).toBe(60);
+    // 60% at most, 20% headroom → 72, rounded up to the 20% gridline step
+    expect(c.maxY).toBe(80);
+    expect(c.yTicks.map((t) => t.v)).toStrictEqual([0, 20, 40, 60, 80]);
   });
 
   it('does not stretch the axis over skipped segments', () => {

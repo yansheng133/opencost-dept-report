@@ -19,8 +19,8 @@ export default defineComponent({
   setup(props) {
     const { t } = useText(useStore());
     const over = () => props.value !== null && props.value > 1;
-    // Two different warnings, two different colours (see the legend above
-    // the workloads table): above the request, and barely used.
+    // Two different warnings, two different colours (EffLegend sits above
+    // every table that draws these bars): above the request, and barely used.
     const under = () => props.value !== null && props.value < 0.1;
     const fill = () => (over() || under() ? undefined : props.color);
 

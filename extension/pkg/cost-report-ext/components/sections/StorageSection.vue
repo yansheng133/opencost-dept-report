@@ -5,6 +5,7 @@ import CrSection from '../CrSection.vue';
 import Help from '../Help.vue';
 import DeptTag from '../DeptTag.vue';
 import Eff from '../Eff.vue';
+import EffLegend from '../EffLegend.vue';
 import MoreRow from '../MoreRow.vue';
 import { useReportContext } from '../../composables/useReportContext';
 import { filterStorage } from '../../utils/scope';
@@ -19,7 +20,7 @@ export default defineComponent({
   name: 'CostReportStorage',
 
   components: {
-    CrSection, Help, DeptTag, Eff, MoreRow
+    CrSection, Help, DeptTag, Eff, EffLegend, MoreRow
   },
 
   props: {
@@ -53,6 +54,7 @@ export default defineComponent({
     :summary="summary"
     :description="ctx.t('costReport.storage.description')"
   >
+    <EffLegend />
     <div class="cr-table-wrap">
       <table class="sortable-table cr-table">
         <thead>
@@ -128,7 +130,6 @@ export default defineComponent({
               <Eff
                 v-else
                 :value="r.usedPct"
-                :color="ctx.depts.color(r.depts[0] && r.depts[0].id)"
               />
             </td>
             <td class="cr-num">

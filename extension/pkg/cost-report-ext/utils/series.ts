@@ -164,6 +164,30 @@ export function spreadLabels(labels: { id: string; y: number }[], minGap = 18): 
   return arr.map((l) => ({ ...l, y: Math.max(l.y, top) }));
 }
 
+const Y_STEPS = [1, 2, 2.5, 5];
+
+/**
+ * Top of the y axis (percent) and the gridline step: 20% headroom over the
+ * highest value shown, rounded up to a round step with about four gridlines.
+ * At least 5%, so a flat line near zero is not blown up into mountains; it
+ * stops at 100% unless a value is above 100%.
+ */
+export function yScale(max: number): { top: number; step: number } {
+  const want = Math.max(max * 1.2, 5);
+  const rough = want / 4;
+  const mag = Math.pow(10, Math.floor(Math.log10(rough)));
+  // Gridline labels are whole percents, so 2.5 only from 25 up.
+  let step = Y_STEPS.map((m) => m * mag).find((v) => v >= rough && Number.isInteger(v)) || 10 * mag;
+  let top = Math.ceil(want / step) * step;
+
+  if (max <= 100 && top > 100) {
+    top = 100;
+    step = 25;
+  }
+
+  return { top, step };
+}
+
 export function buildChart(s: Series, depts: string[], metric: Metric, now = Date.now(), tickEvery?: number): Chart | null {
   const pts = timedPoints(s);
 
@@ -182,8 +206,7 @@ export function buildChart(s: Series, depts: string[], metric: Metric, now = Dat
       max = Math.max(max, v);
     }
   }));
-  // At least up to 20%, so noise does not look like mountains.
-  const maxY = Math.max(20, Math.ceil(max / 20) * 20);
+  const { top: maxY, step: yStep } = yScale(max);
   const lines: Line[] = depts.map((id) => {
     const segments: XY[][] = [];
     let cur: XY[] = [];
@@ -231,7 +254,7 @@ export function buildChart(s: Series, depts: string[], metric: Metric, now = Dat
       id, segments, dashed, marks
     };
   });
-  const yTicks = [0, 1, 2, 3, 4].map((i) => ({ v: maxY * i / 4, y: yOf(maxY * i / 4, maxY) }));
+  const yTicks = Array.from({ length: Math.round(maxY / yStep) + 1 }, (_, i) => i * yStep).map((v) => ({ v, y: yOf(v, maxY) }));
   const xTicks = timeTicks(t0, t1, tickEvery);
   const ends = lines
     .map((l) => {
