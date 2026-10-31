@@ -54,6 +54,7 @@ async function mountPage(name: 'Report' | 'Periods') {
 
 beforeEach(() => {
   mockQuery = {};
+  mockReplace.mockClear();
   window.localStorage.clear();
   document.body.innerHTML = '';
 });
@@ -187,7 +188,7 @@ describe('部門成本', () => {
     w.unmount();
   });
 
-  it('the date hint closes on new input instead of floating over the page', async() => {
+  it('an unusable date reverts the field and keeps an inline hint until fixed; leaving the field applies a valid one', async() => {
     serve({
       [GV]: [200, {}], [`${ GV }/config`]: [200, { ...config, dataSince: '2026-09-21T10:27:00Z' }], [`${ GV }/reports`]: [200, report()]
     });
@@ -200,10 +201,19 @@ describe('部門成本', () => {
     el.value = '2026-01-01';
     await input.trigger('input');
     await input.trigger('keydown', { key: 'Enter' });
-    expect(w.find('.cr-day-hint').exists()).toBe(true);
     expect(w.find('.cr-day-hint').text()).toContain('costReport.dept.dayProblem.before');
+    expect(input.attributes('aria-invalid')).toBe('true');
+    // The field shows the period in use again (live window: empty).
+    expect((w.find('input[type="date"]').element as HTMLInputElement).value).toBe('');
+    // Still there while the user types; it is not a disappearing tooltip.
     el.value = '2026-09-2';
     await input.trigger('input');
+    expect(w.find('.cr-day-hint').exists()).toBe(true);
+    // Tab away with a valid date: applied at once, hint gone.
+    el.value = '2026-09-23';
+    await input.trigger('input');
+    await input.trigger('blur');
+    expect(mockReplace).toHaveBeenCalledWith({ query: { day: '2026-09-23' } });
     expect(w.find('.cr-day-hint').exists()).toBe(false);
     w.unmount();
   });

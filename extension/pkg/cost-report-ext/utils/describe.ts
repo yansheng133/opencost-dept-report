@@ -105,11 +105,12 @@ export function missingMinutes(c: { requestedMinutes?: number | null; measuredMi
   }
   const edge = c.requestedMinutes !== null && c.requestedMinutes !== undefined && c.measuredMinutes !== null && c.measuredMinutes !== undefined ? Math.max(c.requestedMinutes - c.measuredMinutes, 0) : 0;
 
-  // Gaps touching the start or end of the data are part of "no data at the
-  // start or end", not breaks inside it.
+  // An edge gap lies inside the measured range (it is where the data starts
+  // or stops being scraped), so it is not added to the start/end minutes;
+  // it is only taken out of the breaks inside.
   const edgeGaps = c.edgeGapMinutes || 0;
 
-  return { edge: Math.round(edge + edgeGaps), inside: Math.round(Math.max((c.gapMinutes || 0) - edgeGaps, 0)) };
+  return { edge: Math.round(edge), inside: Math.round(Math.max((c.gapMinutes || 0) - edgeGaps, 0)) };
 }
 
 /** True when the period has no cost data at all (the gate's first check blocks). */

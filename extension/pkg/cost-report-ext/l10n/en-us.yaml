@@ -79,6 +79,7 @@ costReport:
     ingestLag: " (excluding the last {minutes} min, not yet written by OpenCost)"
     precision4: "Amounts this period are small and shown with four decimals."
     foldToggle: "Fold or unfold “{title}”"
+    upTo: ", computed up to {time}"
   coverage:
     unknownTitle: Completeness cannot be checked
     unknown: "Prometheus is unreachable ({reason}). The amounts below may miss periods that were not measured, and how much cannot be told."
@@ -233,6 +234,7 @@ costReport:
       cpu: "Average CPU use: {list}"
       ram: "Average memory use: {list}"
     summaryNone: "No usage data in this period"
+    missingSingle: "{count, plural, =1 {1 segment has} other {# segments have}} no data; with a single point there is no line."
   env:
     title: Cost per environment
     description: "The same workloads split by the {label} label."
@@ -279,6 +281,8 @@ costReport:
     overRequest: "Uses more than requested: the scheduler reserved only the request, so the excess is a capacity risk, not efficiency"
     summaryTop: "{count, plural, =1 {1 workload} other {# workloads}}; highest {name} {amount} {currency}"
     noRequest: "No request"
+    legendOver: "Above the request (capacity risk)"
+    legendUnder: "Below 10 % (barely used)"
   storage:
     title: "Storage: requested vs used"
     description: "Cost is requested capacity × hours mounted × rate, whatever is stored. “Paid for empty space” uses the period’s peak usage."

@@ -1,6 +1,6 @@
 <script lang="ts">
-// A small bar for a ratio (efficiency, usage): full at 100%, warned below
-// 10% and above 100%. Using far more than requested is a capacity risk
+// A small bar for a ratio (efficiency, usage): full at 100%, marked below
+// 10% (barely used) and above 100% (above the request) in two colours. Using far more than requested is a capacity risk
 // (the scheduler placed it by its request), not a good score.
 import { defineComponent, PropType } from 'vue';
 import { useStore } from 'vuex';
@@ -19,10 +19,13 @@ export default defineComponent({
   setup(props) {
     const { t } = useText(useStore());
     const over = () => props.value !== null && props.value > 1;
-    const fill = () => (over() || (props.value !== null && props.value < 0.1) ? 'var(--warning)' : props.color);
+    // Two different warnings, two different colours (see the legend above
+    // the workloads table): above the request, and barely used.
+    const under = () => props.value !== null && props.value < 0.1;
+    const fill = () => (over() || under() ? undefined : props.color);
 
     return {
-      pct, fill, over, t
+      pct, fill, over, under, t
     };
   },
 });
@@ -36,11 +39,12 @@ export default defineComponent({
   <span
     v-else
     class="cr-eff"
-    :class="{ over: over() }"
+    :class="{ over: over(), under: under() }"
     :title="over() ? t('costReport.workloads.overRequest') : undefined"
   >
     <span class="cr-eff-track"><span
       class="cr-eff-fill"
+      :class="{ some: value > 0 }"
       :style="{ width: `${ Math.min(value, 1) * 100 }%`, background: fill() }"
     /></span>
     <span class="cr-num">{{ pct(value) }}</span>

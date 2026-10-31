@@ -557,13 +557,60 @@ th.cr-thin {
   white-space: nowrap;
 }
 
+// The track is visible on its own (a border), and a non-zero value always
+// shows at least 2 px of fill.
 .cr-eff-track {
   display: inline-block;
   width: 56px;
-  height: 6px;
+  height: 8px;
+  border: 1px solid var(--border);
   border-radius: 3px;
   background: var(--sortable-table-row-bg, rgba(127, 127, 127, 0.15));
   overflow: hidden;
+}
+
+.cr-eff-fill.some {
+  min-width: 2px;
+}
+
+// Mid-tone colours that read on light and dark backgrounds.
+$cr-over: #e0700b;
+$cr-under: #6f8fb5;
+
+.cr-eff.over .cr-eff-fill {
+  background: $cr-over;
+}
+
+.cr-eff.under .cr-eff-fill {
+  background: $cr-under;
+}
+
+.cr-eff.under .cr-num {
+  color: $cr-under;
+}
+
+.cr-eff-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  font-size: 12px;
+  color: var(--muted, #888);
+
+  i {
+    display: inline-block;
+    width: 10px;
+    height: 8px;
+    margin-right: 4px;
+    border-radius: 2px;
+  }
+
+  .over {
+    background: $cr-over;
+  }
+
+  .under {
+    background: $cr-under;
+  }
 }
 
 .cr-eff-fill {
@@ -787,7 +834,7 @@ th.cr-thin {
 }
 
 .cr-eff.over .cr-num {
-  color: var(--warning, #c90);
+  color: $cr-over;
   font-weight: 600;
 }
 
@@ -813,27 +860,21 @@ th.cr-thin {
   color: var(--muted, #888);
 }
 
-// The date field's hint floats under the field: showing it must not make
-// the sticky toolbar taller (the whole page jumped by a line).
+// The date field's hint sits on the same line as the field (it stays until
+// the date is fixed, so it must not float over the page or make the sticky
+// toolbar taller).
 .cr-day-field {
   position: relative;
 }
 
 .cr-day-hint {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  z-index: 6;
-  margin-top: 2px;
-  padding: 2px 8px;
-  min-width: 220px;
-  max-width: 420px;
   font-size: 12px;
   white-space: nowrap;
   color: var(--warning, #c90);
-  background: var(--body-bg);
-  border: 1px solid var(--warning, #c90);
-  border-radius: var(--border-radius, 4px);
+}
+
+.cr-date[aria-invalid='true'] {
+  border-color: var(--warning, #c90);
 }
 
 // The department table has many money columns (one more with shared

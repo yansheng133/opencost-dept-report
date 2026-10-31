@@ -102,10 +102,11 @@ describe('missingMinutes', () => {
       requestedMinutes: null, measuredMinutes: null, gapMinutes: 3
     })).toStrictEqual({ edge: 0, inside: 3 });
     expect(missingMinutes(null)).toStrictEqual({ edge: 0, inside: 0 });
-    // A gap at the edge of the data counts with the start/end minutes.
+    // A gap at the edge of the data is inside the measured range: not added
+    // to the start/end minutes, only removed from the breaks inside.
     expect(missingMinutes({
-      requestedMinutes: 60, measuredMinutes: 55, gapMinutes: 8, edgeGapMinutes: 3
-    })).toStrictEqual({ edge: 8, inside: 5 });
+      requestedMinutes: 1440, measuredMinutes: 305, gapMinutes: 8, edgeGapMinutes: 3
+    })).toStrictEqual({ edge: 1135, inside: 5 });
   });
 });
 

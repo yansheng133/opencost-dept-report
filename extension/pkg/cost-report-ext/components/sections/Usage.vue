@@ -427,7 +427,7 @@ export default defineComponent({
       <span
         v-if="missing > 0"
         class="cr-gap-l"
-      >{{ ctx.t('costReport.usage.missing', { count: missing }) }}</span>
+      >{{ series.covered > 1 ? ctx.t('costReport.usage.missing', { count: missing }) : ctx.t('costReport.usage.missingSingle', { count: missing }) }}</span>
       <span
         v-if="chart.hasPartial"
         class="cr-gap-l"

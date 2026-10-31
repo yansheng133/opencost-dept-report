@@ -148,7 +148,16 @@ pub fn coverage(c: &CoverageInput<'_>) -> Option<Value> {
         gaps.push((s, expected));
     }
     let iso = |i: usize| fmt_iso(c.start as f64 + i as f64 * c.step);
-    let scrape_pct = round(seen.len() as f64 / expected as f64 * 100.0, 2);
+    // Samples in gaps at the edge of the data range are where data starts or
+    // stops, not scrapes missed inside it: left out of the scrape share, so
+    // "0 min of scrape gaps" never sits next to "99.67 % scrape coverage".
+    let edge_samples: usize = gaps
+        .iter()
+        .filter(|(a, b)| *a == 0 || *b == expected)
+        .map(|(a, b)| b - a)
+        .sum();
+    let inside = expected.saturating_sub(edge_samples).max(1);
+    let scrape_pct = round((seen.len() as f64 / inside as f64 * 100.0).min(100.0), 2);
     let window_pct = match (c.nominal, c.measured_minutes) {
         (Some(n), Some(m)) if n > 0.0 => Some(round((m / n * 100.0).min(100.0), 2)),
         _ => None,
@@ -366,6 +375,7 @@ mod tests {
         .unwrap();
         assert_eq!(c["gaps"][0]["edge"], true);
         assert_eq!(c["edgeGapMinutes"], 1.0);
+        assert_eq!(c["scrapePct"], 100.0);
         assert_eq!(c["gapMinutes"], 1.0);
     }
 

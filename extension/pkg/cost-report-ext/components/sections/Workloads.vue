@@ -57,6 +57,10 @@ export default defineComponent({
     :summary="summary"
     :description="ctx.t('costReport.workloads.description')"
   >
+    <p class="cr-eff-legend">
+      <span><i class="over" />{{ ctx.t('costReport.workloads.legendOver') }}</span>
+      <span><i class="under" />{{ ctx.t('costReport.workloads.legendUnder') }}</span>
+    </p>
     <div class="cr-table-wrap">
       <table class="sortable-table cr-table">
         <thead>

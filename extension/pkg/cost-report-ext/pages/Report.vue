@@ -33,7 +33,7 @@ import {
 } from '../utils/format';
 import { dayField, dayLocalRange, isOngoingDay, DayProblem } from '../utils/day';
 import {
-  DAY_HINT_MS, SPY_FRACTION, SPY_MIN_PX, COVERAGE_WARN_PCT, REFRESH_INTERVAL_MS, THIN_SAMPLE_FACTOR
+  SPY_FRACTION, SPY_MIN_PX, COVERAGE_WARN_PCT, REFRESH_INTERVAL_MS, THIN_SAMPLE_FACTOR
 } from '../config/backend';
 import type { Report } from '../utils/types';
 import { fmtMoney, moneyDigits, setMoneyBasis } from '../utils/money';
@@ -280,11 +280,15 @@ export default defineComponent({
       if (day) {
         const l = dayLocalRange(day);
 
-        const lag = isOngoingDay(day) ? config.value?.ingestLagMinutes : 0;
+        const running = isOngoingDay(day);
+        const lag = running ? config.value?.ingestLagMinutes : 0;
+        // A running day is computed up to the requested end (now minus the
+        // ingest lag): say up to when.
+        const upTo = running && r?.window.requested?.end ? t('costReport.report.upTo', { time: fmtLocal(r.window.requested.end) }) : '';
 
         return t('costReport.report.dayPeriod', {
           day, from: l.from, to: l.to, zone: timeZone() || t('costReport.report.localTime')
-        }) + (lag ? t('costReport.report.ingestLag', { minutes: lag }) : '');
+        }) + upTo + (lag ? t('costReport.report.ingestLag', { minutes: lag }) : '');
       }
       if (!r) {
         return '';
@@ -367,9 +371,6 @@ export default defineComponent({
       if (e.target instanceof HTMLElement) {
         scroller = e.target;
       }
-      if (dayProblem.value) {
-        clearProblem();
-      }
       if (!frame) {
         frame = requestAnimationFrame(spy);
       }
@@ -442,27 +443,20 @@ export default defineComponent({
     // typed dates only on Enter or leaving the field). Days before the
     // earliest data or after today (UTC) are refused with a reason.
     const dayProblem = ref<DayProblem>(null);
-    // The hint is short-lived: it goes away on new input, on clearing the
-    // field, on scrolling and after a few seconds, so it never floats over
-    // the page.
-    let hintTimer: ReturnType<typeof setTimeout> | null = null;
 
+    // A date that cannot be used: the field goes back to the period being
+    // shown and a hint stays next to it (aria-invalid) until a valid date
+    // is applied, the field is emptied or the page goes back to live.
     function clearProblem() {
-      if (hintTimer) {
-        clearTimeout(hintTimer);
-        hintTimer = null;
-      }
       dayProblem.value = null;
     }
 
     function showProblem(p: DayProblem) {
-      clearProblem();
       dayProblem.value = p;
       if (p) {
-        hintTimer = setTimeout(clearProblem, DAY_HINT_MS);
+        dayDraft.value = view.value.day || '';
       }
     }
-    onBeforeUnmount(clearProblem);
     // What the field shows. While it has focus it keeps what is being
     // typed; any re-render (data refresh, a ticking clock) must not reset it
     // to the period's day. It follows the period again on commit and blur.
@@ -478,6 +472,10 @@ export default defineComponent({
     const dayMax = computed(() => todayUtc.value);
     const field = dayField({
       commit: (d) => {
+        clearProblem();
+        // The field shows what is now being applied, not the previous day
+        // until the address changes.
+        dayDraft.value = d;
         if (d !== view.value.day) {
           setQuery({ day: d });
         }
@@ -510,7 +508,6 @@ export default defineComponent({
       },
       dayInput:   (e: Event) => {
         dayDraft.value = (e.target as HTMLInputElement).value;
-        clearProblem();
       },
       dayChange:  (e: Event) => {
         dayDraft.value = (e.target as HTMLInputElement).value;
@@ -519,13 +516,18 @@ export default defineComponent({
       dayCommit:  (e: Event) => field.flush((e.target as HTMLInputElement).value),
       dayBlur:    (e: Event) => {
         dayFocused.value = false;
-        // Leaving the field closes an earlier hint; checking the value on
-        // the way out may show a new one, for a few seconds.
-        clearProblem();
-        field.flush((e.target as HTMLInputElement).value);
-        // A value that was not used goes back to the period's day (the hint
-        // says why); a used one is the new day.
-        dayDraft.value = view.value.day || '';
+        // Leaving the field (Tab, a click elsewhere) applies a valid date at
+        // once, so the field never shows a day the page is not using. The
+        // browser reports an empty value for a half-typed date; the last
+        // complete value typed is used then.
+        const v = (e.target as HTMLInputElement).value || dayDraft.value;
+
+        if (v && v !== view.value.day) {
+          field.flush(v);
+        } else if (!v) {
+          clearProblem();
+          dayDraft.value = view.value.day || '';
+        }
       },
       report,
       error,
@@ -548,7 +550,10 @@ export default defineComponent({
       fmtLocal,
       share,
       pickWindow:  (w: string) => setQuery({ window: w }),
-      backToLive:  () => setQuery({ window: config.value?.defaultWindow || null }),
+      backToLive:  () => {
+        clearProblem();
+        setQuery({ window: config.value?.defaultWindow || null });
+      },
       foldAllOn:   (on: boolean) => {
         foldAll.value = { on, at: Date.now() };
       },
@@ -649,6 +654,8 @@ export default defineComponent({
               <input
                 type="date"
                 class="cr-date"
+                :aria-invalid="dayProblem ? 'true' : undefined"
+                aria-describedby="cr-day-hint"
                 :value="dayDraft"
                 :min="dayMin || undefined"
                 :max="dayMax"
@@ -667,13 +674,12 @@ export default defineComponent({
               >
                 {{ t('costReport.dept.backToLive') }}
               </button>
-            </div>
-            <div
-              v-if="dayProblem"
-              class="cr-day-hint"
-              role="status"
-            >
-              {{ t(`costReport.dept.dayProblem.${ dayProblem }`, { min: dayMin || '—', max: dayMax }) }}
+              <span
+                v-if="dayProblem"
+                id="cr-day-hint"
+                class="cr-day-hint"
+                role="alert"
+              >{{ t(`costReport.dept.dayProblem.${ dayProblem }`, { min: dayMin || '—', max: dayMax }) }}</span>
             </div>
           </fieldset>
           <fieldset v-if="parts && parts.idle && !empty">

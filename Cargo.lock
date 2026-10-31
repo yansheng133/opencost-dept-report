@@ -101,7 +101,7 @@ checksum = "a6ef517f0926dd24a1582492c791b6a4818a4d94e789a334894aa15b0d12f55c"
 
 [[package]]
 name = "cost-report"
-version = "1.6.0"
+version = "1.7.0"
 dependencies = [
  "cost-report-core",
  "rcgen",
@@ -114,7 +114,7 @@ dependencies = [
 
 [[package]]
 name = "cost-report-core"
-version = "1.6.0"
+version = "1.7.0"
 dependencies = [
  "serde_json",
  "sha2",

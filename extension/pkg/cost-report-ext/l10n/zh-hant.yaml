@@ -79,6 +79,7 @@ costReport:
     ingestLag: "（不含最近 {minutes} 分鐘，OpenCost 尚未寫入）"
     precision4: "本期金額較小，以四位小數顯示。"
     foldToggle: "收合或展開「{title}」"
+    upTo: "，目前算到 {time}"
   coverage:
     unknownTitle: 無法確認資料完整度
     unknown: "連不上 Prometheus（{reason}）。下面的金額可能少算了沒量到的時段，但目前無法判斷少了多少。"
@@ -233,6 +234,7 @@ costReport:
       cpu: "平均 CPU 使用率：{list}"
       ram: "平均記憶體使用率：{list}"
     summaryNone: "這段期間沒有使用率資料"
+    missingSingle: "{count} 段沒有資料，只有一個點，所以沒有連線。"
   env:
     title: 各環境的成本
     description: "同一批工作負載再用 {label} 標籤切一次。"
@@ -279,6 +281,8 @@ costReport:
     overRequest: "實際用量超過申請量：排程時只保留了申請量，用多的部分是容量風險，不是效率好"
     summaryTop: "{count} 個工作負載，最高是 {name} {amount} {currency}"
     noRequest: "沒有申請量"
+    legendOver: "超過申請量（容量風險）"
+    legendUnder: "使用率低於 10%（幾乎沒在用）"
   storage:
     title: 儲存空間：申請了多少、用了多少
     description: "金額照申請容量 × 掛載時數 × 單價計算，跟實際放了多少無關。「為空著的空間付的」用區間內的最高用量計算。"

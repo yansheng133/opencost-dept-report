@@ -320,7 +320,16 @@ impl App {
         let (rs, re) = coverage::resolve_window(window, self.data_now())
             .ok_or_else(|| format!("{window} has not started yet"))?;
         let user_window = window;
-        let q = coverage::window_param(rs, re);
+        // Ask OpenCost from where its data begins when the period starts
+        // earlier: it picks its query resolution from the window length, so
+        // "24h" and "today" over the same 305 minutes of data differed in
+        // the last digit. Coverage still counts against the period asked
+        // for (nominal minutes come from `window`, the header shows rs).
+        let qs = match self.data_start() {
+            Some(d) if d > rs && d < re => d / 300 * 300,
+            _ => rs,
+        };
+        let q = coverage::window_param(qs, re);
         let window = q.as_str();
         let dept = self.cfg.agg_dept();
         let dept_env = self.cfg.agg_dept_env();
@@ -357,7 +366,9 @@ impl App {
         let (rates, _) = report::effective_rates(card.as_ref(), w_start.as_deref(), implied);
 
         let cov = match (&w_start, &w_end) {
-            (Some(s), Some(e)) => self.coverage(s, e, coverage::nominal_minutes(window), minutes),
+            // The period asked for, not the clamped query: time before the
+            // data began is still time the period has no data for.
+            (Some(s), Some(e)) => self.coverage(s, e, Some((re - rs) as f64 / 60.0), minutes),
             _ => None,
         };
         let gaps: Vec<Value> = cov
@@ -381,7 +392,8 @@ impl App {
             },
             series: self.usage_series(user_window, None),
             storage: self.storage(&a.by_cc, w_start.as_deref(), w_end.as_deref()),
-            requested_minutes: Some((re - rs) as f64 / 60.0),
+            // What OpenCost divides CPU usage by: the window actually asked.
+            requested_minutes: Some((re - qs) as f64 / 60.0),
         };
         let mut r = report::assemble(&self.cfg.report, &a, user_window, card.as_ref(), &x);
         r["window"]["requested"] =
@@ -520,22 +532,28 @@ impl App {
         known
     }
 
-    /// Earliest data start among the cached reports (the longest window
-    /// reaches furthest back); the page uses it to say when the first
-    /// sealed day will exist.
+    /// Where OpenCost's data begins, when it begins inside the longest
+    /// configured window: that report's data starts more than 5 minutes
+    /// after the start it asked for. `None` until that window has been
+    /// built, or when data reaches back further than it (then nothing is
+    /// clamped). Shorter windows are never used: right after startup the 1h
+    /// report would claim data began an hour ago.
+    fn data_start(&self) -> Option<i64> {
+        let longest = self.cfg.windows.iter().max_by(|a, b| {
+            coverage::nominal_minutes(a)
+                .partial_cmp(&coverage::nominal_minutes(b))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })?;
+        let cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        let w = &cache.get(longest)?.data.as_ref()?["window"];
+        let start = parse_iso(w["start"].as_str()?).ok()?;
+        let asked = parse_iso(w["requested"]["start"].as_str()?).ok()?;
+        (start > asked + 300).then_some(start)
+    }
+
+    /// For the page: when the first sealed day will exist.
     fn data_since(&self) -> Option<String> {
-        self.cache
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .values()
-            .filter_map(|e| {
-                e.data.as_ref()?["window"]["start"]
-                    .as_str()
-                    .map(str::to_string)
-            })
-            .filter_map(|s| parse_iso(&s).ok())
-            .min()
-            .map(|t| fmt_iso(t as f64))
+        self.data_start().map(|t| fmt_iso(t as f64))
     }
 
     fn departments_json(&self, known: &BTreeSet<String>, scope: &Scope) -> Value {

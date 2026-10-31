@@ -233,8 +233,11 @@ fn report_end_to_end_and_scoped() {
     assert_eq!(span, 86_400);
     let (s, e) = get(&a, "reports?day=2999-01-01", Some("finance"));
     assert_eq!((s, e["error"]["code"].as_str()), (400, Some("bad_window")));
+    // The stand-in's data reaches back further than 7 days: no data start
+    // inside the longest window, so nothing is clamped and dataSince is null.
+    assert!(a.refresh("7d"));
     let (_, cfg) = get(&a, "config", Some("finance"));
-    assert_eq!(cfg["dataSince"], START);
+    assert!(cfg["dataSince"].is_null());
 
     let (s, rd) = get(&a, "reports", Some("rd-manager"));
     assert_eq!(s, 200);
@@ -275,6 +278,64 @@ fn report_end_to_end_and_scoped() {
     assert_eq!((s, e["kind"].as_str()), (404, Some("Status")));
     let (s, d) = get(&a, "", Some("finance"));
     assert_eq!((s, d["kind"].as_str()), (404, Some("Status")));
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// OpenCost whose data began two hours ago: rows start at max(window start, then).
+#[test]
+fn queries_start_where_data_begins() {
+    let began = ((cost_report_core::time::now() as i64 - 7200) / 300) * 300;
+    let (base, seen) = mock(move |_, target, _| {
+        let path = target.split('?').next().unwrap_or("");
+        if path != "/allocation/compute" {
+            return (404, "{}".into());
+        }
+        let w = q(target, "window").unwrap_or_default();
+        let (a, b) = w.split_once(',').unwrap_or(("", ""));
+        let (a, b) = (
+            cost_report_core::time::parse_iso(a).unwrap_or(0),
+            cost_report_core::time::parse_iso(b).unwrap_or(0),
+        );
+        let s = a.max(began);
+        let r = json!({"start": cost_report_core::time::fmt_iso(s as f64), "end": cost_report_core::time::fmt_iso(b as f64),
+            "minutes": (b - s) as f64 / 60.0, "totalCost": 1.0, "cpuCoreHours": 1.0});
+        (200, json!({"code": 200, "data": [{"rd": r}]}).to_string())
+    });
+    let dir = temp("clamp");
+    let a = app(&base, &dir);
+    assert!(a.refresh("7d"));
+    let (_, cfg) = get(&a, "config", Some("finance"));
+    assert_eq!(
+        cfg["dataSince"],
+        cost_report_core::time::fmt_iso(began as f64)
+    );
+    seen.lock().unwrap().clear();
+    assert!(a.refresh("24h"));
+    // Every allocation query of the 24h report starts where the data begins…
+    let starts: Vec<String> = seen
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(_, t, _)| {
+            t.starts_with("/allocation/compute") && q(t, "accumulate").as_deref() == Some("true")
+        })
+        .filter_map(|(_, t, _)| {
+            q(t, "window").and_then(|w| w.split_once(',').map(|(a, _)| a.to_string()))
+        })
+        .collect();
+    assert!(!starts.is_empty());
+    assert!(
+        starts
+            .iter()
+            .all(|s| *s == cost_report_core::time::fmt_iso(began as f64)),
+        "{starts:?}"
+    );
+    // …while the header still shows the 24 hours asked for.
+    let (_, r) = get(&a, "reports?window=24h", Some("finance"));
+    let req = &r["window"]["requested"];
+    let span = cost_report_core::time::parse_iso(req["end"].as_str().unwrap()).unwrap()
+        - cost_report_core::time::parse_iso(req["start"].as_str().unwrap()).unwrap();
+    assert_eq!(span, 86_400);
     let _ = std::fs::remove_dir_all(dir);
 }
 
