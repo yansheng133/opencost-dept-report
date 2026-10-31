@@ -3,7 +3,7 @@
 // are the ones that are not a department's own cost (idle, other
 // environments). The value and its note are text, not only the bar.
 import { defineComponent, PropType, computed } from 'vue';
-import { n4 } from '../utils/format';
+import { money } from '../utils/format';
 
 export interface BarRow {
   key: string;
@@ -24,7 +24,7 @@ export default defineComponent({
     const max = computed(() => Math.max(...props.rows.map((r) => r.value), 0.0001));
     const width = (v: number) => `${ Math.max(v / max.value * 100, 0.6) }%`;
 
-    return { width, n4 };
+    return { width, money };
   },
 });
 </script>
@@ -52,7 +52,7 @@ export default defineComponent({
         />
       </div>
       <div class="cr-bar-val cr-num">
-        {{ n4(r.value) }}<span
+        {{ money(r.value) }}<span
           v-if="r.note"
           class="text-muted cr-gap-l"
         >{{ r.note }}</span>

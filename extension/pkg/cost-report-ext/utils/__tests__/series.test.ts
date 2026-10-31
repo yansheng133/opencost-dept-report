@@ -79,10 +79,10 @@ describe('spreadLabels', () => {
   it('pushes overlapping labels apart and keeps them in the plot', () => {
     const out = spreadLabels([{ id: 'a', y: 100 }, { id: 'b', y: 100 }, { id: 'c', y: 101 }]);
 
-    expect(out.map((l) => l.y)).toStrictEqual([100, 114, 128]);
+    expect(out.map((l) => l.y)).toStrictEqual([100, 118, 136]);
     const low = spreadLabels([{ id: 'a', y: BOX.H - BOX.B }, { id: 'b', y: BOX.H - BOX.B }]);
 
-    expect(low.map((l) => l.y)).toStrictEqual([BOX.H - BOX.B - 14, BOX.H - BOX.B]);
+    expect(low.map((l) => l.y)).toStrictEqual([BOX.H - BOX.B - 18, BOX.H - BOX.B]);
   });
 });
 

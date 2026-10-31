@@ -10,7 +10,7 @@ import { useReportContext } from '../../composables/useReportContext';
 import { filterStorage } from '../../utils/scope';
 import { storageNotes } from '../../utils/actions';
 import { storageNoteText } from '../../utils/describe';
-import { capRows, fmtBytes, n4 } from '../../utils/format';
+import { capRows, fmtBytes, money } from '../../utils/format';
 import { TABLE_LIMITS } from '../../config/backend';
 import type { Report } from '../../utils/types';
 
@@ -34,8 +34,12 @@ export default defineComponent({
     const notes = computed(() => storageNotes(props.report.storage, rows.value).map((n) => storageNoteText(ctx.value.t, n)));
     const special = (d: { special?: string | null }) => (d.special ? ctx.value.t(`costReport.storage.special.${ d.special }`) : '');
 
+    const summary = computed(() => ctx.value.t('costReport.storage.summary', {
+      count: rows.value.length, amount: money(rows.value.reduce((s, r) => s + (r.cost || 0), 0)), currency: ctx.value.currency
+    }));
+
     return {
-      ctx, open, rows, shown, notes, special, fmtBytes, n4, limit: TABLE_LIMITS.storage
+      ctx, open, rows, shown, notes, special, fmtBytes, money, summary, limit: TABLE_LIMITS.storage
     };
   },
 });
@@ -45,6 +49,7 @@ export default defineComponent({
   <CrSection
     id="storage"
     :title="ctx.t('costReport.storage.title')"
+    :summary="summary"
     :description="ctx.t('costReport.storage.description')"
   >
     <div class="cr-table-wrap">
@@ -68,13 +73,13 @@ export default defineComponent({
             <th><Help :text="ctx.t('costReport.storage.col.usedPct')" /></th>
             <th>
               <Help
-                :text="ctx.t('costReport.storage.col.amount')"
+                :text="ctx.t('costReport.common.inCurrency', { label: ctx.t('costReport.storage.col.amount'), currency: ctx.currency })"
                 :tip="ctx.t('costReport.help.amount')"
               />
             </th>
             <th>
               <Help
-                :text="ctx.t('costReport.storage.col.idle')"
+                :text="ctx.t('costReport.common.inCurrency', { label: ctx.t('costReport.storage.col.idle'), currency: ctx.currency })"
                 :tip="ctx.t('costReport.help.idle')"
               />
             </th>
@@ -126,10 +131,10 @@ export default defineComponent({
               />
             </td>
             <td class="cr-num">
-              {{ n4(r.cost) }}
+              {{ money(r.cost) }}
             </td>
             <td class="cr-num">
-              {{ r.idleCost === null ? '—' : n4(r.idleCost) }}
+              {{ r.idleCost === null ? '—' : money(r.idleCost) }}
             </td>
           </tr>
           <tr v-if="!rows.length">

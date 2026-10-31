@@ -1,8 +1,8 @@
 import { describe, it, expect } from '@jest/globals';
 import {
-  gateCheckText, actionText, monthReasonText, missingText, storageNoteText, fillNoteText
+  gateCheckText, actionText, monthReasonText, missingText, storageNoteText, fillNoteText, missingMinutes, isEmptyPeriod, gateSummary
 } from '../describe';
-import type { Month } from '../types';
+import type { GateCheck, Month } from '../types';
 
 // Translation that shows the key and its arguments.
 const t = (key: string, args?: Record<string, unknown>) => (args && Object.keys(args).length ? `${ key }${ JSON.stringify(args) }` : key);
@@ -45,7 +45,7 @@ describe('actionText', () => {
     const a = actionText(ctx, { code: 'labelNamespaces', args: { namespaces: [{ ns: 'shop', total: 1.5 }] } });
 
     expect(a.title).toBe('costReport.actions.labelNamespaces.title{"count":1,"label":"cost-center"}');
-    expect(a.text).toContain('shop (1.5000)');
+    expect(a.text).toContain('shop (1.50)');
     const idle = actionText(ctx, {
       code: 'idle',
       args: {
@@ -53,7 +53,7 @@ describe('actionText', () => {
       }
     });
 
-    expect(idle.text).toContain('"month":"60.0000"');
+    expect(idle.text).toContain('"month":"60.00"');
     expect(idle.text).toContain('"who":"costReport.actions.idle.whoSeparate"');
     expect(actionText(ctx, { code: 'none', args: {} }).text).toBe('costReport.actions.none.text');
   });
@@ -82,5 +82,35 @@ describe('notes', () => {
     expect(fillNoteText(t, {
       start: '2026-09-24T00:00:00Z', end: '2026-09-24T01:00:00Z', code: 'no_snapshot'
     })).toContain('costReport.trust.fillNote.no_snapshot');
+  });
+});
+
+describe('missingMinutes', () => {
+  it('counts the uncovered part of the period, not only breaks inside it', () => {
+    // A day with 117 measured minutes and one 1-minute break.
+    expect(missingMinutes({ requestedMinutes: 1440, measuredMinutes: 117.2, gapMinutes: 1 })).toStrictEqual({ edge: 1323, inside: 1 });
+    expect(missingMinutes({ requestedMinutes: 60, measuredMinutes: 60, gapMinutes: 0 })).toStrictEqual({ edge: 0, inside: 0 });
+    // More measured than requested (rounding at the edges) is not negative.
+    expect(missingMinutes({ requestedMinutes: 60, measuredMinutes: 61, gapMinutes: 2 })).toStrictEqual({ edge: 0, inside: 2 });
+    expect(missingMinutes({ requestedMinutes: null, measuredMinutes: null, gapMinutes: 3 })).toStrictEqual({ edge: 0, inside: 3 });
+    expect(missingMinutes(null)).toStrictEqual({ edge: 0, inside: 0 });
+  });
+});
+
+describe('gate summary and empty period', () => {
+  const check = (code: string, status: string) => ({
+    code, status, value: null, unit: ''
+  }) as GateCheck;
+
+  it('counts what did not pass, or says all passed', () => {
+    expect(gateSummary(t, { checks: [check('a', 'block'), check('b', 'mark'), check('c', 'mark'), check('d', 'ok')] }))
+      .toBe('costReport.gate.summary.block{"count":1}costReport.gate.summary.sepcostReport.gate.summary.mark{"count":2}');
+    expect(gateSummary(t, { checks: [check('a', 'ok')] })).toBe('costReport.gate.summary.allOk');
+  });
+
+  it('a period is empty when the has_data check blocks', () => {
+    expect(isEmptyPeriod({ checks: [check('has_data', 'block'), check('coverage', 'unknown')] })).toBe(true);
+    expect(isEmptyPeriod({ checks: [check('has_data', 'ok')] })).toBe(false);
+    expect(isEmptyPeriod(null)).toBe(false);
   });
 });

@@ -1,7 +1,7 @@
 // Text for the codes the backend and utils/actions.ts return. The
 // translation function is passed in, so these stay pure and testable.
 import {
-  n2, n4, pct, fmtBytes, fmtLocal, dayRanges
+  n2, money, pct, fmtBytes, fmtLocal, dayRanges
 } from './format';
 import type {
   Gap, GateCheck, Month, FillNote, StorageRow, Workload
@@ -62,6 +62,41 @@ export function gateCheckText(t: Translate, c: GateCheck, th: Record<string, num
   };
 }
 
+/**
+ * Minutes of the period without data, split by cause. `edge`: the part of
+ * the requested period that has no data at all (before collection started,
+ * or cut at an end); `inside`: breaks within the measured part. Counting
+ * only the breaks said "1 minute missing" for a day that was 8% covered.
+ */
+export function missingMinutes(c: { requestedMinutes?: number | null; measuredMinutes?: number | null; gapMinutes?: number | null } | null | undefined): { edge: number; inside: number } {
+  if (!c) {
+    return { edge: 0, inside: 0 };
+  }
+  const edge = c.requestedMinutes !== null && c.requestedMinutes !== undefined && c.measuredMinutes !== null && c.measuredMinutes !== undefined ? Math.max(c.requestedMinutes - c.measuredMinutes, 0) : 0;
+
+  return { edge: Math.round(edge), inside: Math.round(c.gapMinutes || 0) };
+}
+
+/** True when the period has no cost data at all (the gate's first check blocks). */
+export function isEmptyPeriod(gate: { checks: GateCheck[] } | null | undefined): boolean {
+  return !!gate?.checks.some((c) => c.code === 'has_data' && c.status === 'block');
+}
+
+/**
+ * One line for the folded gate: how many checks block, need a note, or
+ * cannot be judged ("1 項擋下、2 項需標示").
+ */
+export function gateSummary(t: Translate, gate: { checks: GateCheck[] }): string {
+  const n = (s: string) => gate.checks.filter((c) => c.status === s).length;
+  const parts = [
+    ['block', n('block')],
+    ['mark', n('mark')],
+    ['unknown', n('unknown')],
+  ].filter(([, c]) => (c as number) > 0).map(([s, c]) => t(`${ K }.gate.summary.${ s }`, { count: c }));
+
+  return parts.length ? parts.join(t(`${ K }.gate.summary.sep`)) : t(`${ K }.gate.summary.allOk`);
+}
+
 export function fillNoteText(t: Translate, n: FillNote): string {
   return t(`${ K }.trust.fillNote.${ n.code }`, { start: fmtLocal(n.start, true), end: fmtLocal(n.end, true) }) + (n.detail ? ` (${ n.detail })` : '');
 }
@@ -76,13 +111,13 @@ export function actionText(c: Context, item: Item): { title: string; text: strin
   case 'labelNamespaces':
     return {
       title: t(`${ k }.title`, { count: a.namespaces.length, label: c.label }),
-      text:  t(`${ k }.text`, { list: a.namespaces.map((x: { ns: string; total: number }) => `${ x.ns } (${ n4(x.total) })`).join(', ') }),
+      text:  t(`${ k }.text`, { list: a.namespaces.map((x: { ns: string; total: number }) => `${ x.ns } (${ money(x.total) })`).join(', ') }),
     };
   case 'platformRule':
     return {
       title: t(`${ k }.title`),
       text:  t(`${ k }.text`, {
-        list: a.namespaces.join(', ') + (a.more ? t(`${ k }.more`) : ''), total: n4(a.total), pct: n2(a.pct)
+        list: a.namespaces.join(', ') + (a.more ? t(`${ k }.more`) : ''), total: money(a.total), pct: n2(a.pct)
       }),
     };
   case 'rightsize':
@@ -94,8 +129,8 @@ export function actionText(c: Context, item: Item): { title: string; text: strin
           req:    w.cpuReq.toFixed(3),
           use:    w.cpuUse < 0.001 ? t(`${ k }.tiny`) : w.cpuUse,
           eff:    pct(w.cpuEff),
-          amount: n4(w.total),
-          month:  n4(w.total * c.month),
+          amount: money(w.total),
+          month:  money(w.total * c.month),
         })).join('; ')
       }),
     };
@@ -103,7 +138,7 @@ export function actionText(c: Context, item: Item): { title: string; text: strin
     return {
       title: t(`${ k }.title`),
       text:  t(`${ k }.text`, {
-        pct: n2(a.pct), idle: n4(a.idle), month: n4(a.idle * c.month), who: t(`${ k }.${ a.shared ? 'whoShared' : 'whoSeparate' }`)
+        pct: n2(a.pct), idle: money(a.idle), month: money(a.idle * c.month), who: t(`${ k }.${ a.shared ? 'whoShared' : 'whoSeparate' }`)
       }),
     };
   case 'gate':
@@ -121,7 +156,7 @@ export function workloadNoteText(t: Translate, item: Item): { title: string; tex
   const w = item.args as unknown as Workload;
   const k = `${ K }.workloads.notes.${ item.code }`;
   const args: Record<string, unknown> = {
-    name: w.name, amount: n4(w.total), eff: pct(item.code === 'ramIdle' ? w.ramEff : w.cpuEff)
+    name: w.name, amount: money(w.total), eff: pct(item.code === 'ramIdle' ? w.ramEff : w.cpuEff)
   };
 
   if (item.code === 'cpuIdle') {
@@ -150,7 +185,7 @@ export function storageNoteText(t: Translate, item: Item): { title: string; text
     break;
   case 'emptySpace':
     text = t(`${ k }.text`, {
-      paid: n4(a.paid), idle: n4(a.idle), ratio: pct(a.ratio)
+      paid: money(a.paid), idle: money(a.idle), ratio: pct(a.ratio)
     }) +
       (a.top ? ` ${ t(`${ k }.top`, {
         name: rowName(a.top), capacity: fmtBytes(a.top.capacityBytes), peak: fmtBytes(a.top.peakBytes)

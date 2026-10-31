@@ -4,6 +4,23 @@ export const n4 = (v: unknown) => Number(v ?? 0).toFixed(4);
 
 export const n2 = (v: unknown) => Number(v ?? 0).toFixed(2);
 
+/**
+ * An amount of money: no decimals from 100 up, two from 1, four below (a
+ * lab or a short period can be fractions of a unit), with thousands
+ * separators. Four decimals on 1,234.5678 read as false precision.
+ */
+export function money(v: unknown): string {
+  const n = Number(v ?? 0);
+
+  if (!isFinite(n) || n === 0) {
+    return '0';
+  }
+  const a = Math.abs(n);
+  const d = a >= 100 ? 0 : a >= 1 ? 2 : 4;
+
+  return n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+}
+
 /** A ratio (0.123) as a percentage ("12.3%"). */
 export const pct = (v: unknown) => `${ (Number(v ?? 0) * 100).toFixed(1) }%`;
 

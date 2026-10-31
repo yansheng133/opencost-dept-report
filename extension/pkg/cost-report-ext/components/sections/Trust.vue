@@ -9,7 +9,7 @@ import MoreRow from '../MoreRow.vue';
 import { useReportContext } from '../../composables/useReportContext';
 import { visibleParts } from '../../utils/scope';
 import { gapText, fillNoteText } from '../../utils/describe';
-import { capRows, n4, pctValue } from '../../utils/format';
+import { capRows, money, pctValue } from '../../utils/format';
 import { TABLE_LIMITS } from '../../config/backend';
 import type { Report } from '../../utils/types';
 
@@ -37,9 +37,15 @@ export default defineComponent({
       const dash = (v: unknown) => (v === null || v === undefined ? '—' : String(v));
       const out: { item: string; value: string; note: string }[] = [];
 
-      if (!cov || cov.available === false) {
+      if (!cov) {
+        // No coverage at all: the period has no data to measure, or
+        // Prometheus is not configured. Not "unreachable" with no reason.
         out.push({
-          item: t(`${ k }.effective`), value: t(`${ k }.effectiveUnknown`), note: t(`${ k }.effectiveNoProm`, { reason: cov?.reason || '' })
+          item: t(`${ k }.effective`), value: t(`${ k }.effectiveUnknown`), note: props.report.total ? t(`${ k }.effectiveNotConfigured`) : t(`${ k }.effectiveNoData`)
+        });
+      } else if (cov.available === false) {
+        out.push({
+          item: t(`${ k }.effective`), value: t(`${ k }.effectiveUnknown`), note: cov.reason ? t(`${ k }.effectiveNoProm`, { reason: cov.reason }) : t(`${ k }.effectiveNoPromNoReason`)
         });
       } else {
         out.push({
@@ -60,7 +66,7 @@ export default defineComponent({
       out.push({
         item:  t(`${ k }.estimated`),
         value: pctValue(b.estimatedPct || 0),
-        note:  f ? t(`${ k }.estimatedFill`, { amount: n4(b.estimatedTotal) }) + (f.snapshotCoveragePct !== null && f.snapshotCoveragePct !== undefined ? t(`${ k }.estimatedFillCoverage`, { pct: f.snapshotCoveragePct }) : '') : t(`${ k }.estimatedNone`),
+        note:  f ? t(`${ k }.estimatedFill`, { amount: money(b.estimatedTotal) }) + (f.snapshotCoveragePct !== null && f.snapshotCoveragePct !== undefined ? t(`${ k }.estimatedFillCoverage`, { pct: f.snapshotCoveragePct }) : '') : t(`${ k }.estimatedNone`),
       });
       if (parts.value.reconciliation) {
         const r = props.report.reconciliation!;
@@ -70,9 +76,9 @@ export default defineComponent({
           value: pctValue(r.driftPct),
           // A zero or negative asset total is OpenCost not having priced the
           // nodes yet, not a cost to reconcile against (reason from the backend).
-          note:  r.reason === 'assets_not_positive' ? t(`${ k }.reconNotPositive`, { assets: n4(r.assets) }) : r.assets ? t(`${ k }.reconNote`, {
-            allocated: n4(r.allocated), assets: n4(r.assets), byType: Object.entries(r.byType || {}).map(([x, v]) => `${ x } ${ n4(v) }`).join(', ')
-          }) + (r.scaled ? t(`${ k }.reconScaled`, { measured: n4(r.assetsMeasured), assetsMinutes: r.assetsMinutes, minutes: r.allocatedMinutes }) : '') : t(`${ k }.reconUnknown`),
+          note:  r.reason === 'assets_not_positive' ? t(`${ k }.reconNotPositive`, { assets: money(r.assets) }) : r.assets ? t(`${ k }.reconNote`, {
+            allocated: money(r.allocated), assets: money(r.assets), byType: Object.entries(r.byType || {}).map(([x, v]) => `${ x } ${ money(v) }`).join(', ')
+          }) + (r.scaled ? t(`${ k }.reconScaled`, { measured: money(r.assetsMeasured), assetsMinutes: r.assetsMinutes, minutes: r.allocatedMinutes }) : '') : t(`${ k }.reconUnknown`),
         });
       }
       if (f && f.notes?.length) {
@@ -86,8 +92,14 @@ export default defineComponent({
     const targets = computed(() => props.report.targets || []);
     const shownTargets = computed(() => capRows(targets.value, TABLE_LIMITS.targets, open.value).shown);
 
+    const summary = computed(() => {
+      const c = props.report.coverage;
+
+      return c && c.available !== false ? ctx.value.t('costReport.trust.summary', { pct: pctValue(c.pct) }) : ctx.value.t('costReport.trust.summaryUnknown');
+    });
+
     return {
-      ctx, parts, rows, targets, shownTargets, open, limit: TABLE_LIMITS.targets
+      ctx, parts, rows, targets, shownTargets, open, summary, limit: TABLE_LIMITS.targets
     };
   },
 });
@@ -98,6 +110,8 @@ export default defineComponent({
     id="trust"
     :title="ctx.t('costReport.trust.title')"
     :description="ctx.t('costReport.trust.description')"
+    :summary="summary"
+    cluster-wide
   >
     <div class="cr-table-wrap">
       <table class="sortable-table cr-table">

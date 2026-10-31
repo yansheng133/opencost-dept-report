@@ -160,8 +160,10 @@ export default defineComponent({
       hover.value = nearestPoint(c, (e.clientX - r.left) / r.width * BOX.W);
     }
 
+    const summary = computed(() => (series.value ? ctx.value.t('costReport.usage.summary', { step: stepText(series.value.step) }) : ''));
+
     return {
-      ctx, metric, series, busy, pending, failure, chart, missing, tip, hover, move, load, stepText, pathOf, fmtLocal, BOX, zone: timeZone()
+      summary, ctx, metric, series, busy, pending, failure, chart, missing, tip, hover, move, load, stepText, pathOf, fmtLocal, BOX, zone: timeZone()
     };
   },
 });
@@ -172,6 +174,7 @@ export default defineComponent({
     id="usage"
     :title="ctx.t('costReport.usage.title')"
     :description="ctx.t('costReport.usage.description')"
+    :summary="summary"
   >
     <div class="cr-controls">
       <fieldset>
@@ -377,7 +380,11 @@ export default defineComponent({
           >{{ ctx.t('costReport.usage.tipCpu', { req: r.raw.cpuReq, use: r.raw.cpuUse }) }}</span>
         </div>
       </div>
-      <div class="cr-legend">
+      <!-- The lines are named at their ends; a legend only when there are none. -->
+      <div
+        v-if="!chart.endLabels.length"
+        class="cr-legend"
+      >
         <span
           v-for="l in chart.lines"
           :key="l.id"
@@ -404,10 +411,10 @@ export default defineComponent({
       class="text-muted cr-small"
     >
       {{ ctx.t('costReport.usage.note', { step: stepText(series.step), count: series.covered, zone: zone || '—' }) }}
-      <b
+      <span
         v-if="missing > 0"
         class="cr-gap-l"
-      >{{ ctx.t('costReport.usage.missing', { count: missing }) }}</b>
+      >{{ ctx.t('costReport.usage.missing', { count: missing }) }}</span>
       <span
         v-if="chart.partialIdx >= 0"
         class="cr-gap-l"

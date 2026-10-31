@@ -15,6 +15,7 @@ costReport:
     all: 全部
     untagged: 未標籤
     noData: 沒有資料
+    inCurrency: "{label}（{currency}）"
   target:
     cluster: 叢集
     searching: 正在尋找有安裝成本分攤後端的叢集…
@@ -43,6 +44,7 @@ costReport:
   scope:
     all: 你看得到全部部門與全叢集的數字。
     some: "你看得到的部門：{names}。全叢集的數字（閒置、無法分攤、對帳、監控目標）不會顯示。"
+    filtered: "只看{name}。標「全叢集」的區段不受篩選影響，仍是整個叢集的數字。"
   report:
     title: 部門成本分攤
     subtitle: "依 {label} 標籤分攤 OpenCost 的成本"
@@ -63,14 +65,24 @@ costReport:
     expandAll: 全部展開
     fold: 收合這一節
     unfold: 展開這一節
+    clusterWide: "全叢集"
+    clusterWideTip: "這一節是整個叢集的數字，不受部門篩選影響"
+    loadingWindow: "正在載入最近 {window}…"
+    pastDay: "過去的日子，不會自動更新（{time} 計算）"
+    dayPeriod: "{day}（UTC 00:00–24:00）"
   coverage:
     unknownTitle: 無法確認資料完整度
     unknown: "連不上 Prometheus（{reason}）。下面的金額可能少算了沒量到的時段，但目前無法判斷少了多少。"
     lowTitle: "本期量測覆蓋率 {pct}%"
-    low: "缺少 {minutes} 分鐘的資料。這段期間成本照樣發生，所以下面的金額是少算，不是沒發生。出帳前要先決定缺漏怎麼補，並在帳單上標示。"
+    low: "這段期間成本照樣發生，所以下面的金額是少算，不是沒發生。出帳前要先決定缺漏怎麼補，並在帳單上標示。"
     guessedStep: 抓取間隔問不到，用 60 秒估算，覆蓋率僅供參考。
     gaps: "缺漏區段：{gaps}"
     gap: "{start} → {end}（{minutes} 分鐘）"
+    edge: "期間開頭或結尾有 {count} 分鐘沒有資料"
+    inside: "中間斷了 {count} 分鐘"
+    sep: "，"
+    why: "{why}。"
+    more: "細節見資料可信度"
   gate:
     title: 這份數字可以拿去出帳嗎？
     verdict:
@@ -118,6 +130,13 @@ costReport:
       rates_minor: "{resource} 單價差 {driftPct}%，但只佔本期成本 {costShare}%（對帳單的影響約 {impactPct}%），不擋帳"
       rates_unknown: 沒有價目表，單價是從 OpenCost 的金額反推的
       rates_ok: 價目表與系統實際使用的單價相符
+      rates_no_version: "有價目表，但這段期間沒有適用的版本（期間沒有資料，或早於第一版的生效日）"
+    summary:
+      block: "{count} 項擋住"
+      mark: "{count} 項需標示"
+      unknown: "{count} 項無法判斷"
+      sep: "、"
+      allOk: "全部通過"
   resource:
     cpu: CPU
     ram: 記憶體
@@ -159,11 +178,15 @@ costReport:
       pvCost: 儲存金額
       subtotal: 小計
       month: 月推估
+      sharedIdle: "分攤閒置"
     sum: 合計
     sumShared: 合計（含分攤到的閒置）
     basisMixed: 含推估
     formula: 計算方式
     formulaText: "金額 = CPU 核時 × {cpu} ＋ 記憶體 GiB 時 × {ram} ＋ 儲存 GiB 時 × {storage}"
+    otherScale: "以下是整個叢集的其他部分，比例尺與上面各部門不同"
+    formulaShared: " ＋ 分攤到的閒置"
+    summary: "{count} 個部門合計 {amount} {currency}"
   usage:
     title: 各部門的使用率趨勢
     description: 使用率 = 實際用量 ÷ 申請量。金額看付了多少，使用率看申請的有沒有在用。
@@ -186,12 +209,14 @@ costReport:
     tipNoValue: 沒有資料
     tipCpu: "（申請 {req} 核，用 {use}）"
     aria: 各部門使用率隨時間變化
+    summary: "每 {step} 一點"
   env:
     title: 各環境的成本
     description: "同一批工作負載再用 {label} 標籤切一次。"
     other: 未標環境
     none: 無
     note: "斜紋為 {first} 以外的環境。{first} {firstAmount}，其他環境 {otherAmount}，佔 {share}。"
+    summary: "{count} 種環境"
   workloads:
     title: 每個工作負載付了多少、用了多少
     description: 計價依 max(申請量, 實際用量)。申請得多卻沒在用，差額就是可以回收的部分，但要先確認它是不是真的閒著。
@@ -218,6 +243,8 @@ costReport:
       over:
         title: 用得比申請的多
         text: "{name} 效率超過 100%，實際用量高於申請量，應該調高申請值。"
+    summary: "{count} 個工作負載"
+    overRequest: "實際用量超過申請量：排程時只保留了申請量，用多的部分是容量風險，不是效率好"
   storage:
     title: 儲存空間：申請了多少、用了多少
     description: 金額照申請容量 × 掛載時數 × 單價計算，跟實際放了多少無關。閒置金額用區間內的最高用量計算。
@@ -257,11 +284,15 @@ costReport:
       lastScan:
         title: 量測時間
         text: "最近一次量測在 {at}。新寫入的資料要等下一次量測才會反映。"
+    summary: "{count} 個 PVC，{amount} {currency}"
   unalloc:
     title: 無法分攤的成本
     description: "沒有 {label} 標籤的東西無法歸屬到部門。系統元件通常以平台共用成本另行分攤，應用的 namespace 則應該補上標籤。"
     bar: "{ns}：{amount}，佔無法分攤的 {pct}"
     system: 系統元件
+    rest: "其他 {count} 個 namespace"
+    restTip: "包含：{list}"
+    summary: "{amount}，佔總成本 {pct}"
   trust:
     title: 資料可信度
     description: 這些數字是怎麼來的、完不完整。
@@ -309,6 +340,11 @@ costReport:
       status: 狀態
     targetOk: 正常
     targetDegraded: 曾經掉線
+    effectiveNoData: "這段期間沒有成本資料，沒有東西可以量覆蓋率"
+    effectiveNotConfigured: "沒有設定 Prometheus 位址，覆蓋率無法量測"
+    effectiveNoPromNoReason: "連不上 Prometheus，沒有收到錯誤原因"
+    summary: "實際涵蓋率 {pct}"
+    summaryUnknown: "涵蓋率無法判斷"
   actions:
     title: 待處理事項
     description: 依這個叢集本期的資料算出來。
@@ -338,6 +374,7 @@ costReport:
     none:
       title: 目前沒有明顯待辦
       text: 標籤覆蓋、資料完整度與對帳都在合理範圍。
+    summary: "{count} 項待辦"
   rates:
     title: 計價依據
     description: 單價來自價目表（chart 的 rateCard）；沒有價目表時，從 OpenCost 的金額 ÷ 用量反推。
@@ -366,6 +403,9 @@ costReport:
       max: 節點的容量被申請量佔住，別人就排不進來，所以沒在用也要付；實際用量超過申請時，以實際用量計。
       consistentTitle: 兩種閒置處理的總額一致
       consistent: "獨立列帳與按比例分攤，本期總額都是 {total}。"
+    cardNoVersion: "價目表共 {count} 個版本，但這段期間沒有適用的版本（期間沒有資料，或早於第一版的生效日）。"
+    summary: "適用 {effective} 生效的版本"
+    summaryNone: "沒有適用的價目表版本"
   periods:
     title: 帳期
     description: 每天結帳一次並凍結。月報的來源是封存，不是 Prometheus，所以不受監控資料保留期限影響。
@@ -438,3 +478,12 @@ costReport:
     env: 第二維度的標籤（chart 的 labels.environment）。
     amount: 用量 × 單價。
     deptTotal: 有篩選部門時只算那一個部門，不含閒置與無法分攤。
+
+    sharedIdle: "按比例分攤到這個部門的閒置成本。CPU、記憶體、儲存加上這一欄，等於小計。"
+  empty:
+    titleDay: "{day} 沒有成本資料"
+    title: "{period} 沒有成本資料"
+    text: "OpenCost 對這段期間沒有回傳任何成本。常見原因："
+    before: "這段期間早於 OpenCost 開始收資料的時間（例如剛安裝，或選了安裝前的日子）。"
+    outage: "OpenCost 或它讀的 Prometheus 在這段期間停止運作。"
+    labels: "如果叢集有在運作，確認 OpenCost 是否在算成本，以及工作負載是否帶有 {label} 標籤。"

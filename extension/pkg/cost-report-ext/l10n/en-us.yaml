@@ -15,6 +15,7 @@ costReport:
     all: All
     untagged: Untagged
     noData: No data
+    inCurrency: "{label} ({currency})"
   target:
     cluster: Cluster
     searching: Looking for clusters with the cost allocation backend…
@@ -43,6 +44,7 @@ costReport:
   scope:
     all: You see every department and the cluster-wide figures.
     some: "Departments you see: {names}. Cluster-wide figures (idle, unallocated, reconciliation, monitoring targets) are not shown."
+    filtered: "Showing {name} only. Sections marked Cluster-wide are not filtered and show the whole cluster."
   report:
     title: Department cost allocation
     subtitle: "OpenCost costs allocated by the {label} label"
@@ -63,14 +65,24 @@ costReport:
     expandAll: Expand all
     fold: Collapse this section
     unfold: Expand this section
+    clusterWide: "Cluster-wide"
+    clusterWideTip: "This section covers the whole cluster; the department filter does not apply"
+    loadingWindow: "Loading the last {window}…"
+    pastDay: "A past day; not refreshed (computed {time})"
+    dayPeriod: "{day} (UTC 00:00–24:00)"
   coverage:
     unknownTitle: Completeness cannot be checked
     unknown: "Prometheus is unreachable ({reason}). The amounts below may miss periods that were not measured, and how much cannot be told."
     lowTitle: "Measurement coverage this period: {pct}%"
-    low: "{minutes} minutes of data are missing. Costs were still incurred then, so the amounts below are undercounted, not absent. Decide how to fill gaps and mark them on the bill before billing."
+    low: "Costs were still incurred then, so the amounts below are undercounted, not absent. Decide how to fill gaps and mark them on the bill before billing."
     guessedStep: The scrape interval could not be read; 60 s was assumed, so coverage is approximate.
     gaps: "Gaps: {gaps}"
     gap: "{start} → {end} ({minutes} min)"
+    edge: "{count, plural, =1 {1 minute} other {# minutes}} at the start or end of the period have no data"
+    inside: "{count, plural, =1 {1 minute} other {# minutes}} are missing inside it"
+    sep: "; "
+    why: "{why}."
+    more: "Details in Data quality"
   gate:
     title: Can these figures be billed?
     verdict:
@@ -118,6 +130,13 @@ costReport:
       rates_minor: "{resource} rate differs by {driftPct}%, but is only {costShare}% of the period’s cost (about {impactPct}% of the bill); does not block"
       rates_unknown: No rate card; rates are derived from OpenCost’s amounts
       rates_ok: The rate card matches the rates the system uses
+      rates_no_version: "There is a rate card, but no version applies to this period (no data, or before the first effective date)"
+    summary:
+      block: "{count} blocking"
+      mark: "{count} to note"
+      unknown: "{count} unknown"
+      sep: ", "
+      allOk: "All checks passed"
   resource:
     cpu: CPU
     ram: Memory
@@ -159,11 +178,15 @@ costReport:
       pvCost: Storage cost
       subtotal: Subtotal
       month: Monthly estimate
+      sharedIdle: "Shared idle"
     sum: Total
     sumShared: Total (with shared idle)
     basisMixed: includes estimates
     formula: How it is computed
     formulaText: "Amount = CPU core-hours × {cpu} + memory GiB-hours × {ram} + storage GiB-hours × {storage}"
+    otherScale: "The rest of the cluster, on a different scale from the departments above"
+    formulaShared: " + shared idle"
+    summary: "{count, plural, =1 {1 department} other {# departments}}: {amount} {currency}"
   usage:
     title: Usage trend per department
     description: Usage = actual use ÷ requests. Cost tells what was paid; usage tells whether what was requested is used.
@@ -186,12 +209,14 @@ costReport:
     tipNoValue: no data
     tipCpu: " (requested {req} cores, used {use})"
     aria: Usage per department over time
+    summary: "One point every {step}"
   env:
     title: Cost per environment
     description: "The same workloads split by the {label} label."
     other: No environment
     none: none
     note: "Hatched bars are environments other than {first}. {first} {firstAmount}, others {otherAmount}, {share} of the two."
+    summary: "{count, plural, =1 {1 environment} other {# environments}}"
   workloads:
     title: What each workload paid and used
     description: Billed at max(requests, actual use). Requested but unused capacity can be reclaimed, once it is confirmed to be idle.
@@ -218,6 +243,8 @@ costReport:
       over:
         title: Using more than requested
         text: "{name} uses more than it requests (efficiency over 100%); its requests should go up."
+    summary: "{count, plural, =1 {1 workload} other {# workloads}}"
+    overRequest: "Uses more than requested: the scheduler reserved only the request, so the excess is a capacity risk, not efficiency"
   storage:
     title: "Storage: requested vs used"
     description: Cost is requested capacity × hours mounted × rate, whatever is stored. Idle cost uses the period’s peak usage.
@@ -257,11 +284,15 @@ costReport:
       lastScan:
         title: Measured at
         text: "Last measured at {at}. New data shows after the next measurement."
+    summary: "{count, plural, =1 {1 PVC} other {# PVCs}}, {amount} {currency}"
   unalloc:
     title: Unallocated cost
     description: "Anything without the {label} label cannot be allocated. Platform components are usually shared by a separate rule; application namespaces should be labelled."
     bar: "{ns}: {amount}, {pct} of unallocated"
     system: platform
+    rest: "{count, plural, =1 {1 other namespace} other {# other namespaces}}"
+    restTip: "Includes: {list}"
+    summary: "{amount}, {pct} of the total"
   trust:
     title: Data quality
     description: Where these figures come from and how complete they are.
@@ -309,6 +340,11 @@ costReport:
       status: Status
     targetOk: OK
     targetDegraded: Went down
+    effectiveNoData: "There is no cost data in this period, so there is nothing to measure coverage on"
+    effectiveNotConfigured: "No Prometheus address is configured, so coverage cannot be measured"
+    effectiveNoPromNoReason: "Prometheus could not be reached; no reason was given"
+    summary: "Effective coverage {pct}"
+    summaryUnknown: "Coverage unknown"
   actions:
     title: To do
     description: Computed from this cluster’s data for the period.
@@ -338,6 +374,7 @@ costReport:
     none:
       title: Nothing stands out
       text: Label coverage, completeness and reconciliation are within range.
+    summary: "{count, plural, =1 {1 item} other {# items}}"
   rates:
     title: Rates
     description: Rates come from the rate card (the chart’s rateCard); without one they are derived from OpenCost’s cost ÷ usage.
@@ -366,6 +403,9 @@ costReport:
       max: Requested capacity is reserved and others cannot be scheduled on it, so it is paid even when unused; use above requests is billed as used.
       consistentTitle: Both idle treatments give the same total
       consistent: "Separate or shared, the total for the period is {total}."
+    cardNoVersion: "The rate card has {count, plural, =1 {1 version} other {# versions}}, but none applies to this period (no data, or before the first effective date)."
+    summary: "Version effective {effective}"
+    summaryNone: "No rate card version applies"
   periods:
     title: Billing periods
     description: Each day is closed and frozen once. The monthly roll-up comes from these seals, not from Prometheus, so it does not depend on monitoring retention.
@@ -438,3 +478,12 @@ costReport:
     env: The second label (the chart’s labels.environment).
     amount: Usage × rate.
     deptTotal: With a department filter, only that department; without idle and unallocated.
+
+    sharedIdle: "The idle cost spread to this department in proportion. CPU, memory and storage plus this column add up to the subtotal."
+  empty:
+    titleDay: "No cost data for {day}"
+    title: "No cost data for {period}"
+    text: "OpenCost returned no costs for this period. Usual reasons:"
+    before: "The period is before OpenCost started collecting (just installed, or a day before the install)."
+    outage: "OpenCost or the Prometheus it reads was down during the period."
+    labels: "If the cluster was running, check that OpenCost is computing costs and that workloads carry the {label} label."

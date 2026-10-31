@@ -7,8 +7,11 @@ import CrSection from '../CrSection.vue';
 import Bars, { BarRow } from '../Bars.vue';
 import { useReportContext } from '../../composables/useReportContext';
 import { IDLE_COLOR } from '../../utils/scope';
-import { n4, share } from '../../utils/format';
+import { money, share } from '../../utils/format';
 import type { Report } from '../../utils/types';
+
+// Namespaces listed by name; the rest are one row.
+const TOP = 10;
 
 export default defineComponent({
   name: 'CostReportUnallocated',
@@ -23,7 +26,8 @@ export default defineComponent({
       const { t } = ctx.value;
       const whole = props.report.unallocated?.separate || 0;
 
-      return (props.report.unallocRows || []).slice(0, 10).map((r) => ({
+      const all = props.report.unallocRows || [];
+      const top: BarRow[] = all.slice(0, TOP).map((r) => ({
         key:   r.ns,
         label: r.system ? `${ r.ns } · ${ t('costReport.unalloc.system') }` : r.ns,
         color: IDLE_COLOR,
@@ -31,12 +35,28 @@ export default defineComponent({
         hatch: true,
         note:  share(r.total, whole),
         tip:   t('costReport.unalloc.bar', {
-          ns: r.ns, amount: n4(r.total), pct: share(r.total, whole)
+          ns: r.ns, amount: money(r.total), pct: share(r.total, whole)
         }),
       }));
-    });
+      // The rest in one row, so the shares add up to the whole instead of
+      // leaving a reader to look for the missing percent.
+      const rest = all.slice(TOP);
 
-    return { ctx, bars };
+      if (rest.length) {
+        const sum = rest.reduce((s, r) => s + r.total, 0);
+
+        top.push({
+          key: '__rest__', label: t('costReport.unalloc.rest', { count: rest.length }), color: IDLE_COLOR, value: sum, hatch: true, note: share(sum, whole), tip: t('costReport.unalloc.restTip', { list: rest.map((r) => r.ns).join(', ') })
+        });
+      }
+
+      return top;
+    });
+    const summary = computed(() => ctx.value.t('costReport.unalloc.summary', {
+      amount: money(props.report.unallocated?.separate || 0), pct: share(props.report.unallocated?.separate, props.report.total)
+    }));
+
+    return { ctx, bars, summary };
   },
 });
 </script>
@@ -46,6 +66,8 @@ export default defineComponent({
     id="unalloc"
     :title="ctx.t('costReport.unalloc.title')"
     :description="ctx.t('costReport.unalloc.description', { label: ctx.label })"
+    :summary="summary"
+    cluster-wide
   >
     <Bars :rows="bars" />
   </CrSection>

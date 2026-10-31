@@ -105,7 +105,10 @@ Rancher 的角色範本見 `deploy/rancher/`。
     "detail": { "code": "rates_minor", "args": { "items": [{ "resource": "storage", "driftPct": 5.6, "costShare": 0.15, "impactPct": 0.0084 }] } } }
   ```
   `code` 依序是 `has_data`、`coverage`、`estimated`、`reconciliation`、`rates`、`unallocated`。
-  `detail.code`：`no_data`、`rates_mismatch`（`args.resources`）、`rates_minor`（`args.items[]`）、`rates_unknown`、`rates_ok`。
+  `detail.code`：`no_data`、`rates_mismatch`（`args.resources`）、`rates_minor`（`args.items[]`）、`rates_unknown`（沒有價目表）、
+  `rates_no_version`（有價目表，但這段期間沒有適用的版本，例如期間沒有資料）、`rates_ok`。
+  期間沒有資料時（`has_data` 是 `block`），`coverage`、`estimated`、`unallocated` 三項的 `status` 一律是 `unknown`、`value` 是 `null`：
+  空的期間不會顯示「通過」。
   門檻在 `gate.thresholds`（`coverageOk`、`coverageMark`、`estimatedOk`、`estimatedMark`、`driftOk`、`driftMark`、`unallocatedMark`）。
 - `basis.labels` 拿掉，頁面自己翻譯 `measured`／`declared`／`mixed`。
 - `basis.fill.notes` 改成 `[{ "start", "end", "code": "no_snapshot" | "unreachable", "detail" }]`。

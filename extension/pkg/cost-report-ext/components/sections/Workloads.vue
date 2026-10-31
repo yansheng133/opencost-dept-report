@@ -10,7 +10,7 @@ import { useReportContext } from '../../composables/useReportContext';
 import { filterWorkloads } from '../../utils/scope';
 import { workloadNotes } from '../../utils/actions';
 import { workloadNoteText } from '../../utils/describe';
-import { capRows, n4 } from '../../utils/format';
+import { capRows, money } from '../../utils/format';
 import { TABLE_LIMITS } from '../../config/backend';
 import type { Report } from '../../utils/types';
 
@@ -33,8 +33,10 @@ export default defineComponent({
     const shown = computed(() => capRows(list.value, TABLE_LIMITS.workloads, open.value).shown);
     const notes = computed(() => workloadNotes(list.value).map((n) => workloadNoteText(ctx.value.t, n)));
 
+    const summary = computed(() => ctx.value.t('costReport.workloads.summary', { count: list.value.length }));
+
     return {
-      ctx, open, list, shown, notes, n4, limit: TABLE_LIMITS.workloads
+      ctx, open, list, shown, notes, money, summary, limit: TABLE_LIMITS.workloads
     };
   },
 });
@@ -44,6 +46,7 @@ export default defineComponent({
   <CrSection
     id="workloads"
     :title="ctx.t('costReport.workloads.title')"
+    :summary="summary"
     :description="ctx.t('costReport.workloads.description')"
   >
     <div class="cr-table-wrap">
@@ -89,7 +92,7 @@ export default defineComponent({
             </th>
             <th>
               <Help
-                :text="ctx.t('costReport.workloads.col.amount')"
+                :text="ctx.t('costReport.common.inCurrency', { label: ctx.t('costReport.workloads.col.amount'), currency: ctx.currency })"
                 :tip="ctx.t('costReport.help.amount')"
               />
             </th>
@@ -132,7 +135,7 @@ export default defineComponent({
               />
             </td>
             <td class="cr-num">
-              {{ n4(w.total) }}
+              {{ money(w.total) }}
             </td>
           </tr>
           <tr v-if="!list.length">

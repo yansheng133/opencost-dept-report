@@ -304,8 +304,11 @@ pub struct GateInput<'a> {
     pub coverage_pct: Option<f64>,
     pub estimated_pct: f64,
     pub reconciliation: &'a Value,
-    /// Output of [`rate_check`]; `None` without a rate card.
+    /// Output of [`rate_check`]; `None` without a rate card or without a
+    /// version in force for the period.
     pub rates: Option<&'a Value>,
+    /// A rate card is loaded (so `rates: None` means no version applies).
+    pub rate_card: bool,
     pub unallocated_pct: f64,
 }
 
@@ -335,13 +338,17 @@ pub fn billing_gate(input: &GateInput<'_>, t: &Thresholds) -> Value {
     }
     checks.push(has);
 
+    // Without data the share-based checks have nothing to measure: 0 %
+    // estimated or 0 % unallocated of nothing is not a pass. They report
+    // "unknown" so the page never shows "passed" next to an empty period.
+    let measured = |status: &'static str| if input.has_data { status } else { "unknown" };
     checks.push(json!({
         "code": "coverage", "value": input.coverage_pct, "unit": "%",
-        "status": grade(input.coverage_pct, t.coverage_ok, t.coverage_mark, true),
+        "status": measured(grade(input.coverage_pct, t.coverage_ok, t.coverage_mark, true)),
     }));
     checks.push(json!({
-        "code": "estimated", "value": input.estimated_pct, "unit": "%",
-        "status": grade(Some(input.estimated_pct), t.estimated_ok, t.estimated_mark, false),
+        "code": "estimated", "value": input.has_data.then_some(input.estimated_pct), "unit": "%",
+        "status": measured(grade(Some(input.estimated_pct), t.estimated_ok, t.estimated_mark, false)),
     }));
     let recon = input.reconciliation;
     checks.push(json!({
@@ -380,6 +387,10 @@ pub fn billing_gate(input: &GateInput<'_>, t: &Thresholds) -> Value {
             "mark",
             json!({ "code": "rates_minor", "args": { "items": minor } }),
         )
+    } else if rates.is_empty() && input.rate_card {
+        // A rate card exists, but no version is in force for this period
+        // (it has no data, or it is before the first effective date).
+        ("unknown", json!({ "code": "rates_no_version" }))
     } else if rates.is_empty() {
         ("unknown", json!({ "code": "rates_unknown" }))
     } else {
@@ -389,8 +400,8 @@ pub fn billing_gate(input: &GateInput<'_>, t: &Thresholds) -> Value {
         "code": "rates", "value": null, "unit": "", "status": status, "detail": detail,
     }));
     checks.push(json!({
-        "code": "unallocated", "value": input.unallocated_pct, "unit": "%",
-        "status": if input.unallocated_pct <= t.unallocated_mark { "ok" } else { "mark" },
+        "code": "unallocated", "value": input.has_data.then_some(input.unallocated_pct), "unit": "%",
+        "status": measured(if input.unallocated_pct <= t.unallocated_mark { "ok" } else { "mark" }),
     }));
 
     let rank = |s: &str| match s {
@@ -518,6 +529,7 @@ mod tests {
                 estimated_pct: est,
                 reconciliation: &recon,
                 rates,
+                rate_card: rates.is_some(),
                 unallocated_pct: unalloc,
             },
             &t,
@@ -562,6 +574,12 @@ mod tests {
             json!(["cpu"])
         );
         assert_eq!(g["thresholds"]["coverageOk"], 99.0);
+        // No data: share checks are unknown, never "passed".
+        let g = gate(false, Some(100.0), 0.0, Some(&ok), 0.0);
+        for i in [1, 2, 5] {
+            assert_eq!(g["checks"][i]["status"], "unknown", "{}", g["checks"][i]);
+        }
+        assert!(g["checks"][2]["value"].is_null());
         // Missing coverage is unknown, not ok.
         assert_eq!(
             gate(true, None, 0.0, Some(&ok), 5.0)["checks"][1]["status"],

@@ -33,6 +33,10 @@ export function saveFolded(id: string, on: boolean) {
 // section through this.
 export const foldAll = ref<{ on: boolean; at: number } | null>(null);
 
+// The department the page is filtered to ('all' when none). Sections
+// about the whole cluster are not filtered, and say so while a filter is on.
+export const activeFilter = ref('all');
+
 export default defineComponent({
   name: 'CrSection',
 
@@ -40,6 +44,10 @@ export default defineComponent({
     id:          { type: String, required: true },
     title:       { type: String, required: true },
     description: { type: String, default: '' },
+    // Shown next to the title while folded, so a folded page still reads.
+    summary:     { type: String, default: '' },
+    // The section is about the whole cluster, not the filtered department.
+    clusterWide: { type: Boolean, default: false },
   },
 
   setup(props) {
@@ -54,7 +62,7 @@ export default defineComponent({
     watch(foldAll, (v) => v && toggle(v.on));
 
     return {
-      t, folded, toggle
+      t, folded, toggle, activeFilter
     };
   },
 });
@@ -77,6 +85,15 @@ export default defineComponent({
         <i :class="folded ? 'icon icon-chevron-right' : 'icon icon-chevron-down'" />
       </button>
       <h2>{{ title }}</h2>
+      <span
+        v-if="clusterWide && activeFilter !== 'all'"
+        class="cr-tag cr-tag-scope"
+        :title="t('costReport.report.clusterWideTip')"
+      >{{ t('costReport.report.clusterWide') }}</span>
+      <span
+        v-if="folded && summary"
+        class="text-muted cr-fold-summary"
+      >{{ summary }}</span>
       <a
         class="cr-anchor"
         :href="`#${ id }`"

@@ -28,7 +28,7 @@ export default defineComponent({
       }, a));
     });
 
-    return { ctx, items };
+    return { ctx, items, summary: computed(() => ctx.value.t('costReport.actions.summary', { count: items.value.length })) };
   },
 });
 </script>
@@ -38,6 +38,8 @@ export default defineComponent({
     id="next"
     :title="ctx.t('costReport.actions.title')"
     :description="ctx.t('costReport.actions.description')"
+    :summary="summary"
+    cluster-wide
   >
     <ol class="cr-actions">
       <li

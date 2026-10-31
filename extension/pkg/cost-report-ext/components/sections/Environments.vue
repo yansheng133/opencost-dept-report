@@ -7,7 +7,7 @@ import CrSection from '../CrSection.vue';
 import Bars, { BarRow } from '../Bars.vue';
 import { useReportContext } from '../../composables/useReportContext';
 import { filterEnv } from '../../utils/scope';
-import { n4, share } from '../../utils/format';
+import { money, share } from '../../utils/format';
 import type { Report } from '../../utils/types';
 
 export default defineComponent({
@@ -61,12 +61,12 @@ export default defineComponent({
       const otherAmount = rows.value.reduce((s, r) => s + Object.entries(r.envs || {}).filter(([e]) => e !== first).reduce((a, [, v]) => a + v, 0), 0);
 
       return ctx.value.t('costReport.env.note', {
-        first, firstAmount: n4(firstAmount), otherAmount: n4(otherAmount), share: share(otherAmount, firstAmount + otherAmount)
+        first, firstAmount: money(firstAmount), otherAmount: money(otherAmount), share: share(otherAmount, firstAmount + otherAmount)
       });
     });
 
     return {
-      ctx, rows, bars, note
+      ctx, rows, bars, note, summary: computed(() => ctx.value.t('costReport.env.summary', { count: envs.value.length }))
     };
   },
 });
@@ -76,6 +76,7 @@ export default defineComponent({
   <CrSection
     id="env"
     :title="ctx.t('costReport.env.title')"
+    :summary="summary"
     :description="ctx.t('costReport.env.description', { label: ctx.envLabel })"
   >
     <Bars :rows="bars" />

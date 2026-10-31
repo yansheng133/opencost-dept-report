@@ -185,12 +185,26 @@
   font-size: 13px;
 }
 
+// Quick links: the second row of the sticky bar, one line that scrolls
+// sideways rather than wrapping (the bar must stay short).
 .cr-toc {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 4px 14px;
+  margin-top: 6px;
   font-size: 13px;
+  white-space: nowrap;
+  overflow-x: auto;
+
+  a {
+    padding: 2px 0;
+    border-bottom: 2px solid transparent;
+
+    &.active {
+      border-bottom-color: var(--primary, #3d8fd6);
+      font-weight: 600;
+    }
+  }
 }
 
 .cr-toc-tools {
@@ -205,7 +219,7 @@
   border: 1px solid var(--border);
   border-radius: var(--border-radius, 4px);
   background: var(--body-bg);
-  scroll-margin-top: 70px;
+  scroll-margin-top: 140px;
 }
 
 .cr-section-head {
@@ -240,7 +254,7 @@
   border: 1px solid var(--border);
   border-left: 6px solid var(--muted, #888);
   border-radius: var(--border-radius, 4px);
-  scroll-margin-top: 70px;
+  scroll-margin-top: 140px;
 
   &.ok { border-left-color: var(--success, #1a7f52); }
   &.mark { border-left-color: var(--warning, #daa520); }
@@ -252,6 +266,16 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 12px;
+
+  .cr-fold {
+    padding: 0 4px;
+    min-height: 0;
+  }
+}
+
+.cr-gate-summary {
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .cr-tag {
@@ -435,6 +459,16 @@
     white-space: nowrap;
   }
 
+  // A header sits over its numbers: right-aligned when the column's cells
+  // are numbers (the first body row decides). Header text on the left with
+  // the values on the right reads as the next column's values.
+  @for $i from 1 through 10 {
+    &:has(tbody tr:first-child > td:nth-child(#{$i}).cr-num) thead th:nth-child(#{$i}),
+    &:has(tbody tr:first-child > td:nth-child(#{$i}).cr-num) tfoot td:nth-child(#{$i}) {
+      text-align: right;
+    }
+  }
+
   tfoot td {
     font-weight: 600;
   }
@@ -614,4 +648,77 @@
 // Space before an inline note (Vue drops leading spaces inside elements).
 .cr-gap-l {
   margin-left: 0.35em;
+}
+
+// Folded sections keep one line of what is inside.
+.cr-fold-summary {
+  margin-left: 12px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+// Marks a section that a department filter does not narrow.
+.cr-tag-scope {
+  margin-left: 10px;
+  border-color: var(--warning, #c90);
+  color: var(--warning, #c90);
+}
+
+// Departments and the cluster-wide rows are on separate scales.
+.cr-bars-divider {
+  margin: 8px 0 4px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border);
+}
+
+// While a new period loads, the old one stays visible but dimmed: it is
+// about to be replaced and must not be read as the new one.
+.cr-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  transition: opacity 0.15s;
+
+  &.cr-loading {
+    opacity: 0.45;
+    pointer-events: none;
+  }
+}
+
+// A period without any cost.
+.cr-empty {
+  padding: 20px;
+  border: 1px dashed var(--border);
+  border-radius: var(--border-radius, 4px);
+
+  h2 {
+    margin: 0 0 8px;
+  }
+
+  ul {
+    margin: 8px 0 14px;
+  }
+}
+
+// Date and its "back to live" link on one line, so the bar does not jump.
+.cr-day {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  .cr-back {
+    min-height: 0;
+    padding: 0 4px;
+  }
+}
+
+.cr-cur {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted, #888);
+}
+
+.cr-eff.over .cr-num {
+  color: var(--warning, #c90);
+  font-weight: 600;
 }

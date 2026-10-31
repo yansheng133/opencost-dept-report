@@ -4,7 +4,7 @@
 // reached from a sealed day on 帳期). The page asks again every minute,
 // keeping what is being looked at.
 import {
-  defineComponent, ref, computed, watch, onMounted, onBeforeUnmount
+  defineComponent, ref, computed, watch, nextTick, onMounted, onBeforeUnmount
 } from 'vue';
 import { useStore } from 'vuex';
 import { useRoute, useRouter } from 'vue-router';
@@ -13,7 +13,7 @@ import { useBackend } from '../composables/useBackend';
 import { provideReportContext } from '../composables/useReportContext';
 import TargetBar from '../components/TargetBar.vue';
 import Help from '../components/Help.vue';
-import { foldAll } from '../components/CrSection.vue';
+import { foldAll, activeFilter } from '../components/CrSection.vue';
 import Gate from '../components/sections/Gate.vue';
 import Departments from '../components/sections/Departments.vue';
 import Usage from '../components/sections/Usage.vue';
@@ -26,8 +26,8 @@ import Actions from '../components/sections/Actions.vue';
 import Rates from '../components/sections/Rates.vue';
 import { getReport, ApiError, validDay } from '../utils/api';
 import { visibleParts, validFilter } from '../utils/scope';
-import { gapText } from '../utils/describe';
-import { fmtLocal, monthFactor, n4, share } from '../utils/format';
+import { gapText, missingMinutes, isEmptyPeriod } from '../utils/describe';
+import { fmtLocal, monthFactor, money, share } from '../utils/format';
 import { COVERAGE_WARN_PCT, REFRESH_INTERVAL_MS, THIN_SAMPLE_FACTOR } from '../config/backend';
 import type { Report } from '../utils/types';
 
@@ -138,7 +138,17 @@ export default defineComponent({
         return '';
       }
 
-      return s.all ? t('costReport.scope.all') : t('costReport.scope.some', { names: s.departments.map((id) => ctx.value.depts.name(id)).join(', ') });
+      const base = s.all ? t('costReport.scope.all') : t('costReport.scope.some', { names: s.departments.map((id) => ctx.value.depts.name(id)).join(', ') });
+
+      // A filter narrows only the department sections; say so, or the
+      // cluster-wide sections below read as that department's.
+      return filter.value === 'all' ? base : t('costReport.scope.filtered', { name: ctx.value.depts.name(filter.value) });
+    });
+    watch(filter, (f) => {
+      activeFilter.value = f;
+    }, { immediate: true });
+    onBeforeUnmount(() => {
+      activeFilter.value = 'all';
     });
     const coverage = computed(() => {
       const c = report.value?.coverage;
@@ -152,9 +162,15 @@ export default defineComponent({
         };
       }
       if ((c.pct ?? 100) < COVERAGE_WARN_PCT) {
+        const m = missingMinutes(c);
+        const why = [
+          m.edge ? t('costReport.coverage.edge', { count: m.edge }) : '',
+          m.inside ? t('costReport.coverage.inside', { count: m.inside }) : '',
+        ].filter(Boolean).join(t('costReport.coverage.sep'));
+
         return {
           title: t('costReport.coverage.lowTitle', { pct: c.pct }),
-          text:  t('costReport.coverage.low', { minutes: c.gapMinutes || 0 }) + (c.measuredStep ? '' : ` ${ t('costReport.coverage.guessedStep') }`),
+          text:  `${ why ? t('costReport.coverage.why', { why }) : '' } ${ t('costReport.coverage.low') }` + (c.measuredStep ? '' : ` ${ t('costReport.coverage.guessedStep') }`),
           gaps:  (c.gaps || []).length ? t('costReport.coverage.gaps', { gaps: (c.gaps || []).map((g) => gapText(t, g)).join('; ') }) : '',
         };
       }
@@ -178,11 +194,16 @@ export default defineComponent({
     const freshness = computed(() => {
       const r = report.value;
 
-      if (loading.value && !r) {
-        return view.value.day ? t('costReport.report.loadingDay', { day: view.value.day }) : t('costReport.common.loading');
+      if (loading.value) {
+        // Also while the previous period is still on screen: what is shown is
+        // about to be replaced, and must not be read or copied as the new one.
+        return view.value.day ? t('costReport.report.loadingDay', { day: view.value.day }) : t('costReport.report.loadingWindow', { window: view.value.window || config.value?.defaultWindow || '' });
       }
       if (!r) {
         return '';
+      }
+      if (view.value.day) {
+        return t('costReport.report.pastDay', { time: fmtLocal(r.generatedAt, true) });
       }
 
       return r.stale ? t('costReport.report.stale', { age: r.ageSeconds }) : t('costReport.report.fresh', { age: r.ageSeconds, ttl: r.ttlSeconds });
@@ -208,9 +229,57 @@ export default defineComponent({
       return list.map(([id, key]) => ({ id, text: t(key) }));
     });
 
+    const empty = computed(() => isEmptyPeriod(report.value?.gate));
+    const periodText = computed(() => {
+      const r = report.value;
+
+      if (view.value.day) {
+        return t('costReport.report.dayPeriod', { day: view.value.day });
+      }
+
+      return r ? `${ fmtLocal(r.window.start, true) } → ${ fmtLocal(r.window.end, true) }` : '';
+    });
+
+    // The quick link of the section in view is highlighted.
+    const current = ref('');
+    let observer: IntersectionObserver | null = null;
+
+    function observe() {
+      observer?.disconnect();
+      if (typeof IntersectionObserver === 'undefined') {
+        return;
+      }
+      observer = new IntersectionObserver((entries) => {
+        const seen = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+
+        if (seen.length) {
+          current.value = seen[0].target.id;
+        }
+      }, { rootMargin: '-140px 0px -55% 0px' });
+      toc.value.forEach((s) => {
+        const el = document.getElementById(s.id);
+
+        if (el) {
+          observer!.observe(el);
+        }
+      });
+    }
+    // After the sections are rendered.
+    const observeLater = async() => {
+      await nextTick();
+      observe();
+    };
+
+    watch([toc, empty], observeLater);
+    onMounted(observeLater);
+    onBeforeUnmount(() => observer?.disconnect());
+
     return {
       t,
       ctx,
+      empty,
+      periodText,
+      current,
       report,
       error,
       errorText,
@@ -230,7 +299,7 @@ export default defineComponent({
       freshness,
       toc,
       fmtLocal,
-      n4,
+      money,
       share,
       pickWindow:  (w: string) => setQuery({ window: w }),
       pickDay:     (e: Event) => {
@@ -265,9 +334,9 @@ export default defineComponent({
           v-if="report"
           class="cr-meta"
         >
-          <span>{{ t('costReport.report.period') }} <b class="cr-num">{{ fmtLocal(report.window.start, true) }} → {{ fmtLocal(report.window.end, true) }}</b></span>
+          <span>{{ t('costReport.report.period') }} <b class="cr-num">{{ periodText }}</b></span>
           <span>{{ t('costReport.report.cluster') }} <b>{{ report.cluster || '—' }}</b></span>
-          <span>{{ t('costReport.report.freshness') }} <b :class="{ 'cr-warn': report.stale }">{{ freshness }}</b></span>
+          <span>{{ t('costReport.report.freshness') }} <b :class="{ 'cr-warn': report.stale && !loading }">{{ freshness }}</b></span>
         </div>
         <div
           v-else-if="freshness"
@@ -302,92 +371,78 @@ export default defineComponent({
         <div>{{ t('costReport.report.loadFailedHint') }}</div>
       </div>
 
-      <div class="cr-controls cr-sticky">
-        <fieldset>
-          <legend>{{ t('costReport.dept.window') }}</legend>
-          <div class="cr-seg">
-            <label
-              v-for="w in windows"
-              :key="w"
-            ><input
-              type="radio"
-              name="cr-window"
-              :checked="w === currentWindow"
-              @change="pickWindow(w)"
-            > {{ w }}</label>
-          </div>
-        </fieldset>
-        <fieldset>
-          <legend>{{ t('costReport.dept.day') }}</legend>
-          <input
-            type="date"
-            class="cr-date"
-            :value="view.day || ''"
-            @change="pickDay"
-          >
-          <button
-            v-if="view.day"
-            type="button"
-            class="btn btn-sm role-secondary ml-5"
-            @click="backToLive"
-          >
-            {{ t('costReport.dept.backToLive') }}
-          </button>
-        </fieldset>
-        <fieldset v-if="parts && parts.idle">
-          <legend>{{ t('costReport.dept.idleMode') }}</legend>
-          <div class="cr-seg">
-            <label><input
-              v-model="idleShared"
-              type="radio"
-              :value="false"
-            > {{ t('costReport.dept.idleSeparate') }}</label>
-            <label><input
-              v-model="idleShared"
-              type="radio"
-              :value="true"
-            > {{ t('costReport.dept.idleShared') }}</label>
-          </div>
-        </fieldset>
-        <fieldset v-if="report && report.depts.length > 1">
-          <legend>{{ t('costReport.dept.filter') }}</legend>
-          <div class="cr-seg">
-            <label><input
-              v-model="filter"
-              type="radio"
-              value="all"
-            > {{ t('costReport.common.all') }}</label>
-            <label
-              v-for="d in report.depts"
-              :key="d.id"
-            ><input
-              v-model="filter"
-              type="radio"
-              :value="d.id"
-            > {{ ctx.depts.name(d.id) }}</label>
-          </div>
-        </fieldset>
-        <span
-          v-if="loading && report"
-          class="text-muted cr-small"
-        >{{ t('costReport.common.loading') }}</span>
-      </div>
-
-      <template v-if="report">
-        <div
-          v-if="coverage"
-          class="cr-banner cr-banner-warning"
-        >
-          <b>{{ coverage.title }}</b> {{ coverage.text }}
-          <div
-            v-if="coverage.gaps"
-            class="cr-small"
-          >
-            {{ coverage.gaps }}
-          </div>
+      <!-- Controls and the quick links stay in view while scrolling. -->
+      <div class="cr-sticky">
+        <div class="cr-controls">
+          <fieldset>
+            <legend>{{ t('costReport.dept.window') }}</legend>
+            <div class="cr-seg">
+              <label
+                v-for="w in windows"
+                :key="w"
+              ><input
+                type="radio"
+                name="cr-window"
+                :checked="w === currentWindow"
+                @change="pickWindow(w)"
+              > {{ w }}</label>
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>{{ t('costReport.dept.day') }}</legend>
+            <div class="cr-day">
+              <input
+                type="date"
+                class="cr-date"
+                :value="view.day || ''"
+                @change="pickDay"
+              >
+              <button
+                v-if="view.day"
+                type="button"
+                class="btn btn-sm role-link cr-back"
+                @click="backToLive"
+              >
+                {{ t('costReport.dept.backToLive') }}
+              </button>
+            </div>
+          </fieldset>
+          <fieldset v-if="parts && parts.idle && !empty">
+            <legend>{{ t('costReport.dept.idleMode') }}</legend>
+            <div class="cr-seg">
+              <label><input
+                v-model="idleShared"
+                type="radio"
+                :value="false"
+              > {{ t('costReport.dept.idleSeparate') }}</label>
+              <label><input
+                v-model="idleShared"
+                type="radio"
+                :value="true"
+              > {{ t('costReport.dept.idleShared') }}</label>
+            </div>
+          </fieldset>
+          <fieldset v-if="report && report.depts.length > 1">
+            <legend>{{ t('costReport.dept.filter') }}</legend>
+            <div class="cr-seg">
+              <label><input
+                v-model="filter"
+                type="radio"
+                value="all"
+              > {{ t('costReport.common.all') }}</label>
+              <label
+                v-for="d in report.depts"
+                :key="d.id"
+              ><input
+                v-model="filter"
+                type="radio"
+                :value="d.id"
+              > {{ ctx.depts.name(d.id) }}</label>
+            </div>
+          </fieldset>
         </div>
-
         <nav
+          v-if="report && !empty"
           class="cr-toc"
           :aria-label="t('costReport.report.toc')"
         >
@@ -395,6 +450,7 @@ export default defineComponent({
             v-for="s in toc"
             :key="s.id"
             :href="`#${ s.id }`"
+            :class="{ active: current === s.id }"
           >{{ s.text }}</a>
           <span class="cr-toc-tools">
             <button
@@ -409,101 +465,145 @@ export default defineComponent({
             >{{ t('costReport.report.expandAll') }}</button>
           </span>
         </nav>
+      </div>
 
-        <Gate :gate="report.gate" />
-
+      <div
+        v-if="report"
+        class="cr-content"
+        :class="{ 'cr-loading': loading }"
+        :aria-busy="loading"
+      >
+        <!-- A period without any cost: one clear card, not every section full of zeros. -->
         <div
-          v-if="totals"
-          class="cr-totals"
+          v-if="empty"
+          class="cr-empty"
         >
-          <div v-if="parts && parts.idle">
-            <Help
-              class="cr-k"
-              :text="t('costReport.totals.total')"
-              :tip="t('costReport.help.total')"
-            />
-            <span class="cr-v cr-num">{{ n4(report.total) }}</span>
-            <span class="cr-s">{{ t('costReport.totals.totalSub') }}</span>
-          </div>
-          <div v-else>
-            <span class="cr-k">{{ t('costReport.totals.totalScoped') }}</span>
-            <span class="cr-v cr-num">{{ n4(report.total) }}</span>
-            <span class="cr-s">{{ t('costReport.totals.totalScopedSub') }}</span>
-          </div>
-          <div>
-            <Help
-              class="cr-k"
-              :text="totals.deptLabel"
-              :tip="t('costReport.help.deptTotal')"
-            />
-            <span class="cr-v cr-num">{{ n4(totals.deptSum) }}</span>
-            <span class="cr-s">{{ t('costReport.totals.deptSub', { pct: share(totals.deptSum, report.total) }) }}</span>
-          </div>
-          <div v-if="parts && parts.idle">
-            <Help
-              class="cr-k"
-              :text="t('costReport.totals.idle')"
-              :tip="t('costReport.help.idleTotal')"
-            />
-            <span class="cr-v cr-num">{{ idleShared ? t('costReport.totals.idleShared') : n4(report.idle) }}</span>
-            <span class="cr-s">{{ idleShared ? t('costReport.totals.idleSharedSub') : t('costReport.totals.ofTotal', { pct: share(report.idle, report.total) }) }}</span>
-          </div>
-          <div v-if="parts && parts.unallocated">
-            <Help
-              class="cr-k"
-              :text="t('costReport.totals.unallocated')"
-              :tip="t('costReport.help.unallocated')"
-            />
-            <span class="cr-v cr-num">{{ n4(totals.unalloc) }}</span>
-            <span class="cr-s">{{ t('costReport.totals.ofTotal', { pct: share(totals.unalloc, report.total) }) }}</span>
-          </div>
+          <h2>{{ view.day ? t('costReport.empty.titleDay', { day: view.day }) : t('costReport.empty.title', { period: periodText }) }}</h2>
+          <p>{{ t('costReport.empty.text') }}</p>
+          <ul>
+            <li>{{ t('costReport.empty.before') }}</li>
+            <li>{{ t('costReport.empty.outage') }}</li>
+            <li v-if="!view.day">
+              {{ t('costReport.empty.labels', { label: ctx.label }) }}
+            </li>
+          </ul>
+          <button
+            v-if="view.day"
+            type="button"
+            class="btn role-primary"
+            @click="backToLive"
+          >
+            {{ t('costReport.dept.backToLive') }}
+          </button>
         </div>
-        <p class="text-muted cr-small">
-          {{ t('costReport.report.unit', { currency: ctx.currency }) }} ·
-          {{ t('costReport.report.sample', { minutes: report.window.minutes, factor: month.toFixed(1) }) }}
-          <b
-            v-if="thin"
-            class="cr-warn"
-          >{{ t('costReport.report.thin', { minutes: report.window.minutes, factor: month.toFixed(0) }) }}</b>
-        </p>
 
-        <Departments
-          :report="report"
-          :filter="filter"
-          :idle-shared="idleShared"
-          :month="month"
-          :thin="thin"
-        />
-        <Usage
-          :report="report"
-          :view="view"
-          :cluster-id="clusterId"
-          :filter="filter"
-        />
-        <Environments
-          :report="report"
-          :filter="filter"
-        />
-        <Workloads
-          :report="report"
-          :filter="filter"
-        />
-        <StorageSection
-          :report="report"
-          :filter="filter"
-        />
-        <Unallocated
-          v-if="parts && parts.unallocRows"
-          :report="report"
-        />
-        <Trust :report="report" />
-        <Actions
-          :report="report"
-          :idle-shared="idleShared"
-          :month="month"
-        />
-        <Rates :report="report" />
-      </template>
+        <template v-else>
+          <div
+            v-if="coverage"
+            class="cr-banner cr-banner-warning"
+          >
+            <b>{{ coverage.title }}</b> {{ coverage.text }}
+            <a href="#trust">{{ t('costReport.coverage.more') }}</a>
+          </div>
+
+          <div
+            v-if="totals"
+            class="cr-totals"
+          >
+            <div v-if="parts && parts.idle">
+              <Help
+                class="cr-k"
+                :text="t('costReport.totals.total')"
+                :tip="t('costReport.help.total')"
+              />
+              <span class="cr-v cr-num">{{ money(report.total) }} <small class="cr-cur">{{ ctx.currency }}</small></span>
+              <span class="cr-s">{{ t('costReport.totals.totalSub') }}</span>
+            </div>
+            <div v-else>
+              <span class="cr-k">{{ t('costReport.totals.totalScoped') }}</span>
+              <span class="cr-v cr-num">{{ money(report.total) }} <small class="cr-cur">{{ ctx.currency }}</small></span>
+              <span class="cr-s">{{ t('costReport.totals.totalScopedSub') }}</span>
+            </div>
+            <div>
+              <Help
+                class="cr-k"
+                :text="totals.deptLabel"
+                :tip="t('costReport.help.deptTotal')"
+              />
+              <span class="cr-v cr-num">{{ money(totals.deptSum) }} <small class="cr-cur">{{ ctx.currency }}</small></span>
+              <span class="cr-s">{{ t('costReport.totals.deptSub', { pct: share(totals.deptSum, report.total) }) }}</span>
+            </div>
+            <div v-if="parts && parts.idle">
+              <Help
+                class="cr-k"
+                :text="t('costReport.totals.idle')"
+                :tip="t('costReport.help.idleTotal')"
+              />
+              <span class="cr-v cr-num">{{ idleShared ? t('costReport.totals.idleShared') : money(report.idle) }} <small
+                v-if="!idleShared"
+                class="cr-cur"
+              >{{ ctx.currency }}</small></span>
+              <span class="cr-s">{{ idleShared ? t('costReport.totals.idleSharedSub') : t('costReport.totals.ofTotal', { pct: share(report.idle, report.total) }) }}</span>
+            </div>
+            <div v-if="parts && parts.unallocated">
+              <Help
+                class="cr-k"
+                :text="t('costReport.totals.unallocated')"
+                :tip="t('costReport.help.unallocated')"
+              />
+              <span class="cr-v cr-num">{{ money(totals.unalloc) }} <small class="cr-cur">{{ ctx.currency }}</small></span>
+              <span class="cr-s">{{ t('costReport.totals.ofTotal', { pct: share(totals.unalloc, report.total) }) }}</span>
+            </div>
+          </div>
+          <p class="text-muted cr-small">
+            {{ t('costReport.report.unit', { currency: ctx.currency }) }} ·
+            {{ t('costReport.report.sample', { minutes: report.window.minutes, factor: month.toFixed(1) }) }}
+            <b
+              v-if="thin"
+              class="cr-warn"
+            >{{ t('costReport.report.thin', { minutes: report.window.minutes, factor: month.toFixed(0) }) }}</b>
+          </p>
+
+          <Gate :gate="report.gate" />
+
+          <Departments
+            :report="report"
+            :filter="filter"
+            :idle-shared="idleShared"
+            :month="month"
+            :thin="thin"
+          />
+          <Usage
+            :report="report"
+            :view="view"
+            :cluster-id="clusterId"
+            :filter="filter"
+          />
+          <Environments
+            :report="report"
+            :filter="filter"
+          />
+          <Workloads
+            :report="report"
+            :filter="filter"
+          />
+          <StorageSection
+            :report="report"
+            :filter="filter"
+          />
+          <Unallocated
+            v-if="parts && parts.unallocRows"
+            :report="report"
+          />
+          <Trust :report="report" />
+          <Actions
+            :report="report"
+            :idle-shared="idleShared"
+            :month="month"
+          />
+          <Rates :report="report" />
+        </template>
+      </div>
     </template>
   </div>
 </template>

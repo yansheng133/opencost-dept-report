@@ -417,6 +417,7 @@ pub fn assemble(
             estimated_pct,
             reconciliation: &recon_base,
             rates: rate_status.as_ref(),
+            rate_card: card.is_some(),
             unallocated_pct: unalloc_pct,
         },
         &cfg.thresholds,
@@ -580,6 +581,18 @@ pub(crate) mod tests {
         );
         assert_eq!(r["total"], 0.0);
         assert_eq!(r["gate"]["verdict"], "block");
+        // A loaded rate card with no version for an empty period says so.
+        let card =
+            RateCard::parse(r#"{"versions":[{"effective":"2026-01-01","cpu":1.0}]}"#).unwrap();
+        let r = assemble(
+            &cfg(),
+            &Allocations::default(),
+            "2026-10-30T00:00:00Z,2026-10-30T23:59:59Z",
+            Some(&card),
+            &Extras::default(),
+        );
+        assert_eq!(r["gate"]["checks"][4]["detail"]["code"], "rates_no_version");
+        assert_eq!(r["gate"]["checks"][2]["status"], "unknown");
     }
 
     #[test]

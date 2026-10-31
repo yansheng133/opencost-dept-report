@@ -15,7 +15,7 @@ import MoreRow from '../components/MoreRow.vue';
 import { getSeals, getPeriods, ApiError } from '../utils/api';
 import { monthDepts } from '../utils/scope';
 import { monthReasonText, missingText } from '../utils/describe';
-import { capRows, n4, pctValue } from '../utils/format';
+import { capRows, money, pctValue } from '../utils/format';
 import { reportRoute } from '../config/product';
 import { TABLE_LIMITS } from '../config/backend';
 import type { Month, SealRow, Scope } from '../utils/types';
@@ -105,7 +105,7 @@ export default defineComponent({
       scope,
       error,
       loading,
-      n4,
+      money,
       pctValue,
       reportRoute,
       limit: TABLE_LIMITS.seals,
@@ -180,7 +180,7 @@ export default defineComponent({
               class="cr-tag"
               :class="m.verdict"
             >{{ t(`costReport.periods.verdict.${ m.verdict }`) }}</span>
-            <span class="cr-month-amt cr-num">{{ n4(m.total) }}</span>
+            <span class="cr-month-amt cr-num">{{ money(m.total) }}</span>
           </div>
           <div
             v-if="m.reasonText"
@@ -198,7 +198,7 @@ export default defineComponent({
             ><span
               class="cr-swatch"
               :style="{ background: ctx.depts.color(d.id) }"
-            />{{ ctx.depts.name(d.id) }} <b class="cr-num">{{ n4(d.total) }}</b></span>
+            />{{ ctx.depts.name(d.id) }} <b class="cr-num">{{ money(d.total) }}</b></span>
           </div>
           <div class="text-muted cr-small">
             {{ t('costReport.periods.sealedDays', { sealed: m.sealedDays, expected: m.expectedDays }) }}<span v-if="m.current">{{ t('costReport.periods.notOver', { days: m.monthDays }) }}</span>
@@ -273,7 +273,7 @@ export default defineComponent({
                   </router-link>
                 </td>
                 <td class="cr-num">
-                  {{ s.total === null || s.total === undefined ? '—' : n4(s.total) }}
+                  {{ s.total === null || s.total === undefined ? '—' : money(s.total) }}
                 </td>
                 <td class="cr-num">
                   {{ pctValue(s.coveragePct) }}

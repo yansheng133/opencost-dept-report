@@ -5,7 +5,7 @@ import { defineComponent, PropType, computed } from 'vue';
 import CrSection from '../CrSection.vue';
 import Help from '../Help.vue';
 import { useReportContext } from '../../composables/useReportContext';
-import { n4 } from '../../utils/format';
+import { money } from '../../utils/format';
 import type { Report } from '../../utils/types';
 
 type Key = 'cpu' | 'ram' | 'storage';
@@ -45,7 +45,7 @@ export default defineComponent({
         ['ram', r.ram, t('costReport.rates.usageGiB', { v: sum('ramGiBHours').toFixed(4) }), sum('ram')],
         ['storage', r.storage, t('costReport.rates.usageGiB', { v: sum('pvGiBHours').toFixed(4) }), sum('pv')],
       ] as [Key, number | null, string, number][]).map(([k, rate, usage, amount]) => ({
-        k, rate: rate === null || rate === undefined ? '—' : String(rate), usage, amount: n4(amount), mark: mark(k)
+        k, rate: rate === null || rate === undefined ? '—' : String(rate), usage, amount: money(amount), mark: mark(k)
       }));
     });
     const card = computed(() => {
@@ -55,7 +55,14 @@ export default defineComponent({
       if (!rc?.loaded) {
         return [t('costReport.rates.cardMissing')];
       }
-      const v = rc.version || {};
+      const v = rc.version || null;
+
+      // A card exists but no version is in force for this period (no data,
+      // or a period before the first effective date): say that, not "the
+      // version effective from —".
+      if (!v) {
+        return [t('costReport.rates.cardNoVersion', { count: (rc.versions || []).length }), rc.note || '', t('costReport.rates.cardNote')].filter(Boolean);
+      }
 
       return [
         t('costReport.rates.card', { count: (rc.versions || []).length, effective: v.effective || '—' }),
@@ -66,8 +73,14 @@ export default defineComponent({
       ].filter(Boolean);
     });
 
+    const summary = computed(() => {
+      const v = props.report.rateCard?.version;
+
+      return v?.effective ? ctx.value.t('costReport.rates.summary', { effective: v.effective }) : ctx.value.t('costReport.rates.summaryNone');
+    });
+
     return {
-      ctx, rows, card, n4
+      ctx, rows, card, money, summary
     };
   },
 });
@@ -78,6 +91,8 @@ export default defineComponent({
     id="rates"
     :title="ctx.t('costReport.rates.title')"
     :description="ctx.t('costReport.rates.description')"
+    :summary="summary"
+    cluster-wide
   >
     <div class="cr-card-info">
       <p
@@ -112,7 +127,7 @@ export default defineComponent({
             </th>
             <th>
               <Help
-                :text="ctx.t('costReport.rates.col.amount')"
+                :text="ctx.t('costReport.common.inCurrency', { label: ctx.t('costReport.rates.col.amount'), currency: ctx.currency })"
                 :tip="ctx.t('costReport.help.amount')"
               />
             </th>
@@ -153,7 +168,7 @@ export default defineComponent({
         class="cr-note"
       >
         <b>{{ ctx.t('costReport.rates.notes.consistentTitle') }}</b>
-        <span>{{ ctx.t('costReport.rates.notes.consistent', { total: n4(report.total) }) }}</span>
+        <span>{{ ctx.t('costReport.rates.notes.consistent', { total: money(report.total) }) }}</span>
       </div>
     </div>
   </CrSection>

@@ -1,7 +1,20 @@
 import { describe, it, expect } from '@jest/globals';
 import {
-  n4, pct, share, pctValue, fmtBytes, fmtLocal, stepParts, monthFactor, dayRanges, capRows
+  n4, money, pct, share, pctValue, fmtBytes, fmtLocal, stepParts, monthFactor, dayRanges, capRows
 } from '../format';
+
+describe('money', () => {
+  it('uses fewer decimals for larger amounts, with separators', () => {
+    expect(money(1234.5678)).toBe('1,235');
+    expect(money(106.86)).toBe('107');
+    expect(money(12.345)).toBe('12.35');
+    expect(money(0.2899)).toBe('0.2899');
+    expect(money(-3.5)).toBe('-3.50');
+    expect(money(0)).toBe('0');
+    expect(money(null)).toBe('0');
+    expect(money(NaN)).toBe('0');
+  });
+});
 
 describe('numbers', () => {
   it('formats', () => {

@@ -114,6 +114,53 @@ describe('部門成本', () => {
     w.unmount();
   });
 
+  it('filtering a department marks the cluster-wide sections and says so', async() => {
+    serve({
+      [GV]: [200, {}], [`${ GV }/config`]: [200, config], [`${ GV }/reports`]: [200, report()]
+    });
+    const w = await mountPage('Report');
+
+    expect(w.html()).not.toContain('costReport.report.clusterWide<');
+    await w.find('input[type="radio"][value="rd"]').setValue(true);
+    await flushPromises();
+    const html = w.html();
+
+    expect(html).toContain('costReport.scope.filtered{"name":"研發部"}');
+    // Gate, unallocated, trust, actions and rates carry the badge.
+    expect(w.findAll('.cr-tag-scope').length).toBe(5);
+    // Shared idle gets its own column so the row adds up.
+    await w.find('input[type="radio"][value="true"]').setValue(true);
+    await flushPromises();
+    expect(w.html()).toContain('costReport.dept.col.sharedIdle');
+    w.unmount();
+  });
+
+  it('a period without data: one empty card, no sections of zeros', async() => {
+    mockQuery = { day: '2026-10-30' };
+    const none = report();
+
+    none.gate = {
+      verdict: 'block', thresholds: {}, checks: [{
+        code: 'has_data', value: null, unit: '', status: 'block', detail: { code: 'no_data' }
+      }, {
+        code: 'unallocated', value: 0, unit: '%', status: 'unknown'
+      }]
+    };
+    serve({
+      [GV]: [200, {}], [`${ GV }/config`]: [200, config], [`${ GV }/reports`]: [200, none]
+    });
+    const w = await mountPage('Report');
+    const html = w.html();
+
+    expect(html).toContain('costReport.empty.titleDay{"day":"2026-10-30"}');
+    expect(html).toContain('costReport.report.dayPeriod{"day":"2026-10-30"}');
+    expect(html).toContain('costReport.report.pastDay');
+    for (const id of ['gate', 'dept', 'usage', 'trust', 'rates']) {
+      expect(w.find(`#${ id }`).exists()).toBe(false);
+    }
+    w.unmount();
+  });
+
   it('no department: a friendly empty state, no report request', async() => {
     const asked = serve({
       [GV]:               [200, {}],

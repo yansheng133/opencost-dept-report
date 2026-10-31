@@ -87,7 +87,7 @@ export function partialIndex(pts: Pt[], stepMinutes: number, now: number): numbe
 }
 
 /** Spread end labels that would overlap, inside the plot area. */
-export function spreadLabels(labels: { id: string; y: number }[], minGap = 14): { id: string; y: number }[] {
+export function spreadLabels(labels: { id: string; y: number }[], minGap = 18): { id: string; y: number }[] {
   const top = BOX.T + 4;
   const bottom = BOX.H - BOX.B;
   const arr = labels.map((l) => ({ ...l })).sort((a, b) => a.y - b.y);
