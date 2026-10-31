@@ -6,6 +6,30 @@ entries:
       catalog.cattle.io/namespace: cost-report
       catalog.cattle.io/release-name: cost-report
     apiVersion: v2
+    appVersion: 1.7.0
+    created: "2026-10-31T06:49:51.411086555Z"
+    description: Department cost allocation from OpenCost, served as a Kubernetes
+      aggregated API for the Rancher UI extension
+    digest: 757486e1fb3bcb42618e98de3980d5c21766c698067038bc5ef51384a988570d
+    home: https://github.com/yansheng133/opencost-dept-report
+    keywords:
+    - opencost
+    - finops
+    - chargeback
+    - rancher
+    kubeVersion: '>=1.30.0-0'
+    name: cost-report
+    sources:
+    - https://github.com/yansheng133/opencost-dept-report
+    type: application
+    urls:
+    - assets/cost-report/cost-report-1.7.0.tgz
+    version: 1.7.0
+  - annotations:
+      catalog.cattle.io/display-name: cost-report
+      catalog.cattle.io/namespace: cost-report
+      catalog.cattle.io/release-name: cost-report
+    apiVersion: v2
     appVersion: 1.6.0
     created: "2026-10-31T06:27:01.236429611Z"
     description: Department cost allocation from OpenCost, served as a Kubernetes
@@ -170,6 +194,34 @@ entries:
     - assets/cost-report/cost-report-1.0.0.tgz
     version: 1.0.0
   cost-report-ext:
+  - annotations:
+      catalog.cattle.io/certified: community
+      catalog.cattle.io/display-name: Cost allocation
+      catalog.cattle.io/namespace: cattle-ui-plugin-system
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/permits-os: linux, windows
+      catalog.cattle.io/rancher-version: '>= 2.15.0-0 < 2.16.0-0'
+      catalog.cattle.io/scope: management
+      catalog.cattle.io/ui-component: plugins
+      catalog.cattle.io/ui-extensions-version: '>= 3.0.0 < 4.0.0'
+    apiVersion: v2
+    appVersion: 1.7.0
+    created: "2026-10-31T06:49:51.41125698Z"
+    description: Department cost allocation from OpenCost, with billing checks, usage
+      trends and sealed billing periods
+    digest: 046736ee52a096e7b6086c482fba66b6f254f0a88015a14b6e54fa3d3b7128ac
+    home: https://github.com/yansheng133/opencost-dept-report
+    icon: https://raw.githubusercontent.com/yansheng133/opencost-dept-report/v1.7.0/extension/pkg/cost-report-ext/assets/icon.svg
+    keywords:
+    - opencost
+    - finops
+    - chargeback
+    - cost-allocation
+    name: cost-report-ext
+    type: application
+    urls:
+    - assets/cost-report-ext/cost-report-ext-1.7.0.tgz
+    version: 1.7.0
   - annotations:
       catalog.cattle.io/certified: community
       catalog.cattle.io/display-name: Cost allocation
@@ -366,4 +418,4 @@ entries:
     urls:
     - assets/cost-report-ext/cost-report-ext-1.0.0.tgz
     version: 1.0.0
-generated: "2026-10-31T06:27:01.235648542Z"
+generated: "2026-10-31T06:49:51.410546118Z"
