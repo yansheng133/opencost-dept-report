@@ -87,13 +87,17 @@ Rancher 的角色範本見 `deploy/rancher/`。
   "scope": { "all": false, "departments": ["rd"] },
   "labels": { "department": "cost-center", "environment": "env", "environments": ["prod", "dev"] },
   "features": { "seals": true, "volumeUsage": true, "snapshotter": true, "coverage": true },
-  "currency": "TWD"
+  "currency": "TWD",
+  "dataSince": "2026-10-31T01:20:00Z"
 }
 ```
 
-`departments` 只列呼叫者看得到的。名稱來自 chart 的 `departments` 設定，沒設定的代號就顯示代號。
+`departments` 只列呼叫者看得到的。`dataSince` 是後端目前看到最早的資料時間（還沒有資料時是 `null`）。名稱來自 chart 的 `departments` 設定，沒設定的代號就顯示代號。
 
 ### `GET reports?window=24h` 或 `GET reports?day=2026-09-24`（list）
+
+`window=24h` 是「到現在為止的最近 24 小時」：後端換算成絕對區間再問 OpenCost（OpenCost 自己的相對區間會對齊整點、包含還沒發生的時間）。
+指定的日子還沒結束時，只算到現在；還沒開始的日子回 400 `bad_window`。實際查詢的區間在 `window.requested`（`start`、`end`）。
 
 主報表。欄位跟舊版 `/api/report` 相同（見 `demo` 分支的 `app/app.py` `build_report`），差別：
 

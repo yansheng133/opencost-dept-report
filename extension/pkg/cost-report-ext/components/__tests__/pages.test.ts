@@ -127,7 +127,8 @@ describe('部門成本', () => {
 
     expect(html).toContain('costReport.scope.filtered{"name":"研發部"}');
     // Gate, unallocated, trust and actions carry the badge (rates follow the filter).
-    expect(w.findAll('.cr-tag-scope').length).toBe(4);
+    // Plus the cluster-wide total in the rates footer.
+    expect(w.findAll('.cr-tag-scope').length).toBe(5);
     // Shared idle gets its own column so the row adds up.
     await w.find('input[type="radio"][value="true"]').setValue(true);
     await flushPromises();

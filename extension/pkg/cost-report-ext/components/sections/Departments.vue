@@ -9,8 +9,9 @@ import Help from '../Help.vue';
 import DeptTag from '../DeptTag.vue';
 import { useReportContext } from '../../composables/useReportContext';
 import { visibleParts, IDLE_COLOR, UNALLOCATED_COLOR } from '../../utils/scope';
-import { money, moneyCol, n4, share } from '../../utils/format';
+import { n4, share } from '../../utils/format';
 import type { Report } from '../../utils/types';
+import { fmtMoney } from '../../utils/money';
 
 export default defineComponent({
   name: 'CostReportDepartments',
@@ -40,19 +41,6 @@ export default defineComponent({
       })));
     const sum = computed(() => rows.value.reduce((s, r) => s + r.amount, 0));
     const idleSum = computed(() => rows.value.reduce((s, r) => s + r.idleShare, 0));
-    // One decimal count per column (its total included).
-    const cols = computed(() => {
-      const r = rows.value;
-
-      return {
-        cpu:    moneyCol(r.map((x) => x.cpu)),
-        ram:    moneyCol(r.map((x) => x.ram)),
-        pv:     moneyCol(r.map((x) => x.pv)),
-        idle:   moneyCol([...r.map((x) => x.idleShare), idleSum.value]),
-        amount: moneyCol([...r.map((x) => x.amount), sum.value]),
-        month:  moneyCol([...r.map((x) => x.amount * props.month), sum.value * props.month]),
-      };
-    });
     // Departments are compared with each other on their own scale; idle and
     // unallocated (often far larger) go below a divider on another scale,
     // or the departments shrink to a few pixels each.
@@ -67,7 +55,7 @@ export default defineComponent({
         value: r.amount,
         note:  share(r.amount, total),
         tip:   t('costReport.dept.bar', {
-          name: depts.name(r.id), amount: money(r.amount), month: money(r.amount * props.month)
+          name: depts.name(r.id), amount: fmtMoney(r.amount), month: fmtMoney(r.amount * props.month)
         }),
       }));
     });
@@ -99,14 +87,13 @@ export default defineComponent({
       rows,
       sum,
       idleSum,
-      cols,
       bars,
       otherBars,
-      money,
+      fmtMoney,
       n4,
       rate,
       summary: computed(() => ctx.value.t('costReport.dept.summary', {
-        amount: money(sum.value), currency: ctx.value.currency, count: rows.value.length
+        amount: fmtMoney(sum.value), currency: ctx.value.currency, count: rows.value.length
       })),
       cur: (label: string) => ctx.value.t('costReport.common.inCurrency', { label, currency: ctx.value.currency })
     };
@@ -202,31 +189,31 @@ export default defineComponent({
               {{ n4(r.cpuCoreHours) }}
             </td>
             <td class="cr-num">
-              {{ cols.cpu(r.cpu) }}
+              {{ fmtMoney(r.cpu) }}
             </td>
             <td class="cr-num">
               {{ n4(r.ramGiBHours) }}
             </td>
             <td class="cr-num">
-              {{ cols.ram(r.ram) }}
+              {{ fmtMoney(r.ram) }}
             </td>
             <td class="cr-num">
-              {{ cols.pv(r.pv) }}
+              {{ fmtMoney(r.pv) }}
             </td>
             <td
               v-if="idleShared"
               class="cr-num"
             >
-              {{ cols.idle(r.idleShare) }}
+              {{ fmtMoney(r.idleShare) }}
             </td>
             <td class="cr-num">
-              {{ cols.amount(r.amount) }}
+              {{ fmtMoney(r.amount) }}
             </td>
             <td
               class="cr-num"
               :class="{ 'cr-thin': thin }"
             >
-              {{ cols.month(r.amount * month) }}
+              {{ fmtMoney(r.amount * month) }}
             </td>
           </tr>
         </tbody>
@@ -238,16 +225,16 @@ export default defineComponent({
               v-if="idleShared"
               class="cr-num"
             >
-              {{ cols.idle(idleSum) }}
+              {{ fmtMoney(idleSum) }}
             </td>
             <td class="cr-num">
-              {{ cols.amount(sum) }}
+              {{ fmtMoney(sum) }}
             </td>
             <td
               class="cr-num"
               :class="{ 'cr-thin': thin }"
             >
-              {{ cols.month(sum * month) }}
+              {{ fmtMoney(sum * month) }}
             </td>
           </tr>
         </tfoot>

@@ -225,6 +225,16 @@ fn report_end_to_end_and_scoped() {
     assert_eq!(full["reconciliation"]["assets"], 100.0);
     assert!(full["series"]["points"].as_array().unwrap().len() >= 2);
     assert_eq!(full["gate"]["checks"][0]["code"], "has_data");
+    // The window is reported as asked and as resolved (the last 24 h up to now).
+    assert_eq!(full["window"]["query"], "24h");
+    let req = &full["window"]["requested"];
+    let span = cost_report_core::time::parse_iso(req["end"].as_str().unwrap()).unwrap()
+        - cost_report_core::time::parse_iso(req["start"].as_str().unwrap()).unwrap();
+    assert_eq!(span, 86_400);
+    let (s, e) = get(&a, "reports?day=2999-01-01", Some("finance"));
+    assert_eq!((s, e["error"]["code"].as_str()), (400, Some("bad_window")));
+    let (_, cfg) = get(&a, "config", Some("finance"));
+    assert_eq!(cfg["dataSince"], START);
 
     let (s, rd) = get(&a, "reports", Some("rd-manager"));
     assert_eq!(s, 200);

@@ -7,8 +7,9 @@ import CrSection from '../CrSection.vue';
 import Bars, { BarRow } from '../Bars.vue';
 import { useReportContext } from '../../composables/useReportContext';
 import { IDLE_COLOR } from '../../utils/scope';
-import { money, share } from '../../utils/format';
+import { share } from '../../utils/format';
 import type { Report } from '../../utils/types';
+import { fmtMoney } from '../../utils/money';
 
 // Namespaces listed by name; the rest are one row.
 const TOP = 10;
@@ -40,7 +41,7 @@ export default defineComponent({
         hatch: true,
         note:  share(r.total, whole),
         tip:   t('costReport.unalloc.bar', {
-          ns: r.ns, amount: money(r.total), pct: share(r.total, whole)
+          ns: r.ns, amount: fmtMoney(r.total), pct: share(r.total, whole)
         }),
       }));
       // The rest in one row, so the shares add up to the whole instead of
@@ -57,10 +58,10 @@ export default defineComponent({
 
       return top;
     });
-    const summary = computed(() => ctx.value.t('costReport.unalloc.summarySeparate', { amount: money(props.report.unallocated?.separate || 0), pct: share(props.report.unallocated?.separate, props.report.total) }));
+    const summary = computed(() => ctx.value.t('costReport.unalloc.summarySeparate', { amount: fmtMoney(props.report.unallocated?.separate || 0), pct: share(props.report.unallocated?.separate, props.report.total) }));
 
     return {
-      ctx, bars, summary, money
+      ctx, bars, summary, fmtMoney
     };
   },
 });
@@ -78,7 +79,7 @@ export default defineComponent({
       v-if="idleShared"
       class="cr-small cr-warn"
     >
-      {{ ctx.t('costReport.unalloc.basisSeparate', { shared: money(report.unallocated ? report.unallocated.shared : 0), separate: money(report.unallocated ? report.unallocated.separate : 0) }) }}
+      {{ ctx.t('costReport.unalloc.basisSeparate', { shared: fmtMoney(report.unallocated ? report.unallocated.shared : 0), separate: fmtMoney(report.unallocated ? report.unallocated.separate : 0) }) }}
     </p>
     <Bars :rows="bars" />
   </CrSection>

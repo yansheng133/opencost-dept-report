@@ -107,19 +107,26 @@ export function workloadNotes(list: Workload[]): Item[] {
   const top = <T>(xs: T[], by: (x: T) => number) => [...xs].sort((a, b) => by(b) - by(a))[0];
   const cpuWaste = top(list.filter((w) => w.cpuReq > 0 && w.cpuEff < 0.1), (w) => w.total);
   const ramWaste = top(list.filter((w) => w.ramReqMi >= 128 && w.ramEff < 0.2), (w) => w.ramReqMi);
-  const busy = top(list.filter((w) => w.cpuEff >= 0.5), (w) => w.cpuEff);
   const over = top(list.filter((w) => w.cpuEff > 1), (w) => w.cpuEff);
 
   if (cpuWaste) {
-    out.push({ code: 'cpuIdle', args: { ...cpuWaste } });
+    // "Nearly all of the amount pays for reserved capacity" holds only when
+    // memory is barely used too; otherwise only the CPU part is idle.
+    out.push({ code: cpuWaste.ramEff < 0.2 ? 'cpuIdle' : 'cpuIdleOnly', args: { ...cpuWaste } });
   }
   if (ramWaste) {
     out.push({ code: 'ramIdle', args: { ...ramWaste } });
   }
-  // Low usage is not the same as waste: some services do work, some use
-  // more than they request (and should request more).
-  if (busy) {
-    out.push({ code: 'busy', args: { ...busy } });
+  // Low usage is not always waste: a stateful service or a per-node agent
+  // with low usage is often standby capacity (a database, a replica, a
+  // node agent). The example must have LOW usage; with none, no note.
+  const standby = top(
+    list.filter((w) => w !== cpuWaste && (w.kind === 'statefulset' || w.kind === 'daemonset') && w.cpuReq > 0 && w.cpuEff < 0.2),
+    (w) => w.total
+  );
+
+  if (standby) {
+    out.push({ code: 'standby', args: { ...standby } });
   }
   if (over) {
     out.push({ code: 'over', args: { ...over } });

@@ -34,6 +34,32 @@ pub fn nominal_minutes(window: &str) -> Option<f64> {
     num.parse::<f64>().ok().map(|n| n * mult)
 }
 
+/// The absolute range to ask OpenCost for, as epoch seconds.
+///
+/// OpenCost aligns relative windows to the clock hour and includes the part
+/// of the hour that has not happened yet: at 04:38, "1h" is 04:00–05:00 and
+/// "24h" ends at 05:00. Counted against the window asked for, that future
+/// time looked like 22 missing minutes, so "1h" could never pass the
+/// coverage check, and a day still running looked mostly unmeasured. So a
+/// relative window becomes the last N minutes up to now, and an absolute
+/// one that ends in the future is cut at now. Both are minute-aligned.
+pub fn resolve_window(window: &str, now: f64) -> Option<(i64, i64)> {
+    let now_min = (now / 60.0).floor() as i64 * 60;
+    let w = window.trim();
+    if let Some((a, b)) = w.split_once(',') {
+        let (a, b) = (parse_iso(a.trim()).ok()?, parse_iso(b.trim()).ok()?);
+        let end = b.min(now_min);
+        return (end > a).then_some((a, end));
+    }
+    let minutes = nominal_minutes(w)?;
+    Some((now_min - (minutes * 60.0) as i64, now_min))
+}
+
+/// [`resolve_window`] as an OpenCost window string.
+pub fn window_param(start: i64, end: i64) -> String {
+    format!("{},{}", fmt_iso(start as f64), fmt_iso(end as f64))
+}
+
 /// The scrape interval (seconds) of `job`, from `/api/v1/targets` data.
 /// Asked, not guessed: a wrong interval biases coverage up or down with no
 /// visible symptom.
@@ -228,6 +254,32 @@ mod tests {
         );
         assert_eq!(nominal_minutes("x"), None);
         assert_eq!(nominal_minutes(""), None);
+    }
+
+    #[test]
+    fn resolves_windows_up_to_now() {
+        let now = parse_iso("2026-10-31T04:38:30Z").unwrap() as f64;
+        let (a, b) = resolve_window("1h", now).unwrap();
+        assert_eq!(
+            window_param(a, b),
+            "2026-10-31T03:38:00Z,2026-10-31T04:38:00Z"
+        );
+        let (a, b) = resolve_window("24h", now).unwrap();
+        assert_eq!(b - a, 86_400);
+        // Today is cut at now; a past day is kept whole.
+        let (a, b) = resolve_window("2026-10-31T00:00:00Z,2026-10-31T23:59:59Z", now).unwrap();
+        assert_eq!(
+            window_param(a, b),
+            "2026-10-31T00:00:00Z,2026-10-31T04:38:00Z"
+        );
+        let (a, b) = resolve_window("2026-10-30T00:00:00Z,2026-10-30T23:59:59Z", now).unwrap();
+        assert_eq!(
+            window_param(a, b),
+            "2026-10-30T00:00:00Z,2026-10-30T23:59:59Z"
+        );
+        // A day that has not started yet has nothing to ask for.
+        assert!(resolve_window("2026-11-01T00:00:00Z,2026-11-01T23:59:59Z", now).is_none());
+        assert!(resolve_window("bad", now).is_none());
     }
 
     #[test]

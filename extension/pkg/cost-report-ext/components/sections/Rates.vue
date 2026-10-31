@@ -5,8 +5,9 @@ import { defineComponent, PropType, computed } from 'vue';
 import CrSection from '../CrSection.vue';
 import Help from '../Help.vue';
 import { useReportContext } from '../../composables/useReportContext';
-import { money, moneyCol } from '../../utils/format';
+
 import type { Report } from '../../utils/types';
+import { fmtMoney } from '../../utils/money';
 
 type Key = 'cpu' | 'ram' | 'storage';
 
@@ -51,10 +52,9 @@ export default defineComponent({
         ['ram', r.ram, t('costReport.rates.usageGiB', { v: sum('ramGiBHours').toFixed(4) }), sum('ram')],
         ['storage', r.storage, t('costReport.rates.usageGiB', { v: sum('pvGiBHours').toFixed(4) }), sum('pv')],
       ] as [Key, number | null, string, number][]);
-      const fmt = moneyCol(list.map((x) => x[3]));
 
       return list.map(([k, rate, usage, amount]) => ({
-        k, rate: rate === null || rate === undefined ? '—' : String(rate), usage, amount: fmt(amount), mark: mark(k)
+        k, rate: rate === null || rate === undefined ? '—' : String(rate), usage, amount: fmtMoney(amount), mark: mark(k)
       }));
     });
     const card = computed(() => {
@@ -89,7 +89,7 @@ export default defineComponent({
     });
 
     return {
-      ctx, rows, card, money, summary
+      ctx, rows, card, fmtMoney, summary
     };
   },
 });
@@ -176,7 +176,10 @@ export default defineComponent({
         class="cr-note"
       >
         <b>{{ ctx.t('costReport.rates.notes.consistentTitle') }}</b>
-        <span>{{ ctx.t('costReport.rates.notes.consistent', { total: money(report.total) }) }}</span>
+        <span>{{ ctx.t('costReport.rates.notes.consistent', { total: fmtMoney(report.total) }) }}<span
+          v-if="filter !== 'all'"
+          class="cr-tag cr-tag-scope"
+        >{{ ctx.t('costReport.report.clusterWide') }}</span></span>
       </div>
     </div>
   </CrSection>

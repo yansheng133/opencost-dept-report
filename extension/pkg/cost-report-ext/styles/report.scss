@@ -475,7 +475,11 @@
 
 .cr-table {
   width: 100%;
-  border-collapse: collapse;
+  // Separate (with no spacing) rather than collapsed borders: a sticky
+  // header cell then covers the rows scrolling under it completely; with
+  // collapsed borders a few pixels of row text showed through.
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: 13px;
 
   th,
@@ -758,4 +762,20 @@
 .cr-eff.over .cr-num {
   color: var(--warning, #c90);
   font-weight: 600;
+}
+
+// Data quality: the item names stay on one line.
+.cr-trust-table td:first-child {
+  min-width: 200px;
+  white-space: nowrap;
+}
+
+// Shown while the first report of a period loads.
+.cr-placeholder {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 160px;
+  justify-content: center;
+  color: var(--muted, #888);
 }

@@ -1,34 +1,14 @@
 import { describe, it, expect } from '@jest/globals';
 import {
-  n4, money, moneyDigits, moneyAt, moneyCol, pct, share, pctValue, fmtBytes, fmtLocal, stepParts, monthFactor, dayRanges, capRows
+  n4, pct, share, smallUse, pctValue, fmtBytes, fmtLocal, stepParts, monthFactor, dayRanges, capRows
 } from '../format';
 
-describe('money', () => {
-  it('uses fewer decimals for larger amounts, with separators', () => {
-    expect(money(1234.5678)).toBe('1,235');
-    expect(money(106.86)).toBe('107');
-    expect(money(12.345)).toBe('12.35');
-    expect(money(0.2899)).toBe('0.2899');
-    expect(money(-3.5)).toBe('-3.50');
-    expect(money(0)).toBe('0');
-    expect(money(null)).toBe('0');
-    expect(money(NaN)).toBe('0');
-  });
-});
-
-describe('money columns', () => {
-  it('one decimal count per column, from its largest value', () => {
-    expect(moneyDigits([107, 83.99, 47.25])).toBe(0);
-    expect(moneyDigits([5.39, 0.9386])).toBe(2);
-    expect(moneyDigits([0, 0.0025])).toBe(4);
-    expect(moneyDigits([-150, 1])).toBe(0);
-    expect(moneyDigits([])).toBe(4);
-    const col = moneyCol([107, 83.99, 47.25]);
-
-    expect([107, 83.99, 47.25, 1234.4].map(col)).toStrictEqual(['107', '84', '47', '1,234']);
-    expect([5.39, 0.9386].map(moneyCol([5.39, 0.9386]))).toStrictEqual(['5.39', '0.94']);
-    expect(moneyAt(0, 4)).toBe('0.0000');
-    expect(moneyAt(null, 2)).toBe('0.00');
+describe('smallUse', () => {
+  it('does not show 0 when something was used', () => {
+    expect(smallUse(0, 0.003, '0.001')).toBe('<0.001');
+    expect(smallUse(0, 0, '0.001')).toBe('0');
+    expect(smallUse(0.25, 0.5, '0.001')).toBe('0.25');
+    expect(smallUse(0, 0.01, '1')).toBe('<1');
   });
 });
 

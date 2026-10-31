@@ -8,7 +8,9 @@ import {
   defineComponent, PropType, computed, ref, watch
 } from 'vue';
 import { useReportContext } from '../../composables/useReportContext';
-import { foldAll, foldedSet, saveFolded, activeFilter } from '../CrSection.vue';
+import {
+  foldAll, foldedSet, saveFolded, activeFilter, openRequest
+} from '../CrSection.vue';
 import { gateCheckText, gateSummary } from '../../utils/describe';
 import { n2 } from '../../utils/format';
 import type { Gate } from '../../utils/types';
@@ -30,6 +32,7 @@ export default defineComponent({
       saveFolded(ID, on);
     }
     watch(foldAll, (v) => v && toggle(v.on));
+    watch(openRequest, (v) => v && v.id === ID && folded.value && toggle(false));
     // A verdict that gets worse opens the checks again.
     watch(() => props.gate.verdict, (v, old) => {
       if (v !== 'ok' && old === 'ok') {
@@ -94,7 +97,7 @@ export default defineComponent({
             </div>
             <div
               v-if="c.detail"
-              class="cr-small"
+              class="text-muted cr-small"
             >
               {{ c.detail }}
             </div>

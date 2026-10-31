@@ -104,8 +104,22 @@ describe('workloadNotes', () => {
       name: 'mem', ramReqMi: 512, ramEff: 0.1
     }), wl({ name: 'hot', cpuEff: 1.4 })]);
 
-    expect(n.map((x) => [x.code, x.args.name])).toStrictEqual([['cpuIdle', 'idle'], ['ramIdle', 'mem'], ['busy', 'hot'], ['over', 'hot']]);
+    // Memory is used (50%): only the CPU part is idle. No standby example
+    // (no stateful or per-node workload with low usage): no such note.
+    expect(n.map((x) => [x.code, x.args.name])).toStrictEqual([['cpuIdleOnly', 'idle'], ['ramIdle', 'mem'], ['over', 'hot']]);
     expect(workloadNotes([])).toStrictEqual([]);
+  });
+
+  it('says "reserved capacity" only when both resources idle, and gives a low-usage standby example', () => {
+    const n = workloadNotes([wl({
+      name: 'idle', cpuEff: 0.01, ramEff: 0.05, total: 3
+    }), wl({
+      name: 'db', kind: 'statefulset', cpuEff: 0.05, total: 2
+    }), wl({
+      name: 'busy-db', kind: 'statefulset', cpuEff: 0.9, total: 5
+    })]);
+
+    expect(n.map((x) => [x.code, x.args.name])).toStrictEqual([['cpuIdle', 'idle'], ['standby', 'db']]);
   });
 });
 

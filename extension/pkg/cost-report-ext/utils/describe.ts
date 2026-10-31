@@ -1,12 +1,13 @@
 // Text for the codes the backend and utils/actions.ts return. The
 // translation function is passed in, so these stay pure and testable.
 import {
-  n2, money, pct, fmtBytes, fmtLocal, dayRanges
+  n2, pct, fmtBytes, fmtLocal, dayRanges
 } from './format';
 import type {
   Gap, GateCheck, Month, FillNote, StorageRow, Workload
 } from './types';
 import type { Item } from './actions';
+import { fmtMoney } from './money';
 
 export type Translate = (key: string, args?: Record<string, unknown>) => string;
 
@@ -111,13 +112,13 @@ export function actionText(c: Context, item: Item): { title: string; text: strin
   case 'labelNamespaces':
     return {
       title: t(`${ k }.title`, { count: a.namespaces.length, label: c.label }),
-      text:  t(`${ k }.text`, { list: a.namespaces.map((x: { ns: string; total: number }) => `${ x.ns } (${ money(x.total) })`).join(', ') }),
+      text:  t(`${ k }.text`, { list: a.namespaces.map((x: { ns: string; total: number }) => `${ x.ns } (${ fmtMoney(x.total) })`).join(', ') }),
     };
   case 'platformRule':
     return {
       title: t(`${ k }.title`),
       text:  t(`${ k }.text`, {
-        list: a.namespaces.join(', ') + (a.more ? t(`${ k }.more`) : ''), total: money(a.total), pct: n2(a.pct)
+        list: a.namespaces.join(', ') + (a.more ? t(`${ k }.more`) : ''), total: fmtMoney(a.total), pct: n2(a.pct)
       }),
     };
   case 'rightsize':
@@ -129,8 +130,8 @@ export function actionText(c: Context, item: Item): { title: string; text: strin
           req:    w.cpuReq.toFixed(3),
           use:    w.cpuUse < 0.001 ? t(`${ k }.tiny`) : w.cpuUse,
           eff:    pct(w.cpuEff),
-          amount: money(w.total),
-          month:  money(w.total * c.month),
+          amount: fmtMoney(w.total),
+          month:  fmtMoney(w.total * c.month),
         })).join('; ')
       }),
     };
@@ -138,7 +139,7 @@ export function actionText(c: Context, item: Item): { title: string; text: strin
     return {
       title: t(`${ k }.title`),
       text:  t(`${ k }.text`, {
-        pct: n2(a.pct), idle: money(a.idle), month: money(a.idle * c.month), who: t(`${ k }.${ a.shared ? 'whoShared' : 'whoSeparate' }`)
+        pct: n2(a.pct), idle: fmtMoney(a.idle), month: fmtMoney(a.idle * c.month), who: t(`${ k }.${ a.shared ? 'whoShared' : 'whoSeparate' }`)
       }),
     };
   case 'gate':
@@ -156,11 +157,14 @@ export function workloadNoteText(t: Translate, item: Item): { title: string; tex
   const w = item.args as unknown as Workload;
   const k = `${ K }.workloads.notes.${ item.code }`;
   const args: Record<string, unknown> = {
-    name: w.name, amount: money(w.total), eff: pct(item.code === 'ramIdle' ? w.ramEff : w.cpuEff)
+    name: w.name, amount: fmtMoney(w.total), eff: pct(item.code === 'ramIdle' ? w.ramEff : w.cpuEff)
   };
 
-  if (item.code === 'cpuIdle') {
+  if (item.code === 'cpuIdle' || item.code === 'cpuIdleOnly') {
     args.req = w.cpuReq;
+    args.ramEff = pct(w.ramEff);
+  } else if (item.code === 'standby') {
+    args.kind = w.kind;
   } else if (item.code === 'ramIdle') {
     args.req = w.ramReqMi;
     args.use = w.ramUseMi;
@@ -185,7 +189,7 @@ export function storageNoteText(t: Translate, item: Item): { title: string; text
     break;
   case 'emptySpace':
     text = t(`${ k }.text`, {
-      paid: money(a.paid), idle: money(a.idle), ratio: pct(a.ratio)
+      paid: fmtMoney(a.paid), idle: fmtMoney(a.idle), ratio: pct(a.ratio)
     }) +
       (a.top ? ` ${ t(`${ k }.top`, {
         name: rowName(a.top), capacity: fmtBytes(a.top.capacityBytes), peak: fmtBytes(a.top.peakBytes)

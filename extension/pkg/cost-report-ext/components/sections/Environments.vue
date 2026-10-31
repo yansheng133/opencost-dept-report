@@ -7,8 +7,9 @@ import CrSection from '../CrSection.vue';
 import Bars, { BarRow } from '../Bars.vue';
 import { useReportContext } from '../../composables/useReportContext';
 import { filterEnv } from '../../utils/scope';
-import { money, moneyCol, share } from '../../utils/format';
+import { share } from '../../utils/format';
 import type { Report } from '../../utils/types';
+import { fmtMoney } from '../../utils/money';
 
 export default defineComponent({
   name: 'CostReportEnvironments',
@@ -61,7 +62,7 @@ export default defineComponent({
       const otherAmount = rows.value.reduce((s, r) => s + Object.entries(r.envs || {}).filter(([e]) => e !== first).reduce((a, [, v]) => a + v, 0), 0);
 
       return ctx.value.t('costReport.env.note', {
-        first, firstAmount: money(firstAmount), otherAmount: money(otherAmount), share: share(otherAmount, firstAmount + otherAmount)
+        first, firstAmount: fmtMoney(firstAmount), otherAmount: fmtMoney(otherAmount), share: share(otherAmount, firstAmount + otherAmount)
       });
     });
 
@@ -78,9 +79,8 @@ export default defineComponent({
         if (other) {
           per.push([ctx.value.t('costReport.env.other'), other]);
         }
-        const fmt = moneyCol(per.map(([, v]) => v));
 
-        return ctx.value.t('costReport.env.summary', { list: per.map(([e, v]) => `${ e } ${ fmt(v) }`).join(' · '), currency: ctx.value.currency });
+        return ctx.value.t('costReport.env.summary', { list: per.map(([e, v]) => `${ e } ${ fmtMoney(v) }`).join(' · '), currency: ctx.value.currency });
       })
     };
   },

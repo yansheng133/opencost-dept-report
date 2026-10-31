@@ -10,9 +10,10 @@ import { useReportContext } from '../../composables/useReportContext';
 import { filterWorkloads } from '../../utils/scope';
 import { workloadNotes } from '../../utils/actions';
 import { workloadNoteText } from '../../utils/describe';
-import { capRows, money, moneyCol } from '../../utils/format';
+import { capRows, smallUse } from '../../utils/format';
 import { TABLE_LIMITS } from '../../config/backend';
 import type { Report } from '../../utils/types';
+import { fmtMoney } from '../../utils/money';
 
 export default defineComponent({
   name: 'CostReportWorkloads',
@@ -33,18 +34,17 @@ export default defineComponent({
     const shown = computed(() => capRows(list.value, TABLE_LIMITS.workloads, open.value).shown);
     const notes = computed(() => workloadNotes(list.value).map((n) => workloadNoteText(ctx.value.t, n)));
 
-    const amount = computed(() => moneyCol(list.value.map((w) => w.total)));
     // Count and the most expensive one (the list is sorted by amount).
     const summary = computed(() => {
       const top = list.value[0];
 
       return top ? ctx.value.t('costReport.workloads.summaryTop', {
-        count: list.value.length, name: top.name, amount: money(top.total), currency: ctx.value.currency
+        count: list.value.length, name: top.name, amount: fmtMoney(top.total), currency: ctx.value.currency
       }) : ctx.value.t('costReport.workloads.summary', { count: 0 });
     });
 
     return {
-      ctx, open, list, shown, notes, amount, summary, limit: TABLE_LIMITS.workloads
+      ctx, open, list, shown, notes, fmtMoney, smallUse, summary, limit: TABLE_LIMITS.workloads
     };
   },
 });
@@ -125,7 +125,7 @@ export default defineComponent({
               >{{ w.env || ctx.t('costReport.common.untagged') }}</span>
             </td>
             <td class="cr-num">
-              {{ w.cpuReq }} → {{ w.cpuUse }}
+              {{ w.cpuReq }} → {{ smallUse(w.cpuUse, w.cpuEff, '0.001') }}
             </td>
             <td>
               <Eff
@@ -134,7 +134,7 @@ export default defineComponent({
               />
             </td>
             <td class="cr-num">
-              {{ w.ramReqMi }} → {{ w.ramUseMi }} MiB
+              {{ w.ramReqMi }} → {{ smallUse(w.ramUseMi, w.ramEff, '1') }} MiB
             </td>
             <td>
               <Eff
@@ -143,7 +143,7 @@ export default defineComponent({
               />
             </td>
             <td class="cr-num">
-              {{ amount(w.total) }}
+              {{ fmtMoney(w.total) }}
             </td>
           </tr>
           <tr v-if="!list.length">

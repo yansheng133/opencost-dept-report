@@ -13,7 +13,7 @@ import { useBackend } from '../composables/useBackend';
 import { provideReportContext } from '../composables/useReportContext';
 import TargetBar from '../components/TargetBar.vue';
 import Help from '../components/Help.vue';
-import { foldAll, activeFilter } from '../components/CrSection.vue';
+import { foldAll, activeFilter, openSection } from '../components/CrSection.vue';
 import Gate from '../components/sections/Gate.vue';
 import Departments from '../components/sections/Departments.vue';
 import Usage from '../components/sections/Usage.vue';
@@ -27,12 +27,13 @@ import Rates from '../components/sections/Rates.vue';
 import { getReport, ApiError, validDay } from '../utils/api';
 import { visibleParts, validFilter } from '../utils/scope';
 import { gapText, missingMinutes, isEmptyPeriod } from '../utils/describe';
+import { fmtLocal, monthFactor, share, timeZone } from '../utils/format';
+import { dayLocalRange, isOngoingDay, settleDay } from '../utils/day';
 import {
-  fmtLocal, monthFactor, moneyCol, share, timeZone
-} from '../utils/format';
-import { completeDay, dayLocalRange, isOngoingDay } from '../utils/day';
-import { DAY_SETTLE_MS, COVERAGE_WARN_PCT, REFRESH_INTERVAL_MS, THIN_SAMPLE_FACTOR } from '../config/backend';
+  DAY_SETTLE_MS, SPY_LINE_PX, COVERAGE_WARN_PCT, REFRESH_INTERVAL_MS, THIN_SAMPLE_FACTOR
+} from '../config/backend';
 import type { Report } from '../utils/types';
+import { fmtMoney, setMoneyBasis } from '../utils/money';
 
 export default defineComponent({
   name: 'CostReportPage',
@@ -86,6 +87,9 @@ export default defineComponent({
         // A slow answer must not overwrite a later request (fast switching
         // between days would show one day's figures under another's date).
         if (mine === seq) {
+          // One precision for every amount on the page, from the report's
+          // total; the department filter does not change it.
+          setMoneyBasis(r.total);
           report.value = r;
           loadedView.value = asked;
           error.value = null;
@@ -255,36 +259,72 @@ export default defineComponent({
           day, from: l.from, to: l.to, zone: timeZone() || t('costReport.report.localTime')
         });
       }
+      if (!r) {
+        return '';
+      }
+      // The range actually asked ("last 24 hours: 10-30 12:38 → 10-31
+      // 12:38"), and where the data starts if that is later.
+      const req = r.window.requested;
+      const range = req ? t('costReport.report.windowPeriod', {
+        window: r.window.query, from: fmtLocal(req.start, true), to: fmtLocal(req.end, true)
+      }) : `${ fmtLocal(r.window.start, true) } → ${ fmtLocal(r.window.end, true) }`;
+      const late = req && r.window.start && Date.parse(r.window.start) - Date.parse(req.start) > 60 * 1000;
 
-      return r ? `${ fmtLocal(r.window.start, true) } → ${ fmtLocal(r.window.end, true) }` : '';
+      return late ? `${ range }${ t('costReport.report.dataFrom', { time: fmtLocal(r.window.start, true) }) }` : range;
     });
 
     // The quick link of the section being read is highlighted: the last
-    // section whose top has passed under the sticky bar, or the first one
-    // at the top of the page. Computed from positions on every scroll (any
-    // scrolling container: Rancher scrolls a div, not the window) and after
-    // each reload, so it never keeps a stale section.
+    // section whose top is above a line 40 px below the sticky bar; at the
+    // top of the page the first section, at the bottom the last. Computed
+    // from positions on every scroll (any scrolling container: Rancher
+    // scrolls a div, not the window) and after each reload.
     const current = ref('');
     const page = ref<HTMLElement | null>(null);
     const bar = ref<HTMLElement | null>(null);
     let frame = 0;
+    let scroller: HTMLElement | null = null;
+    // After a quick link is used, its section stays highlighted until the
+    // reader scrolls (the section may not reach the line at the page end).
+    let pinned = '';
+    let pinnedAt = 0;
+
+    function atBottom(): boolean {
+      const el = scroller || (document.scrollingElement as HTMLElement | null);
+
+      return !!el && el.scrollHeight > el.clientHeight && el.scrollTop + el.clientHeight >= el.scrollHeight - 2;
+    }
 
     function spy() {
       frame = 0;
-      const limit = (bar.value?.getBoundingClientRect().bottom || 0) + 12;
       const ids = toc.value.map((x) => x.id);
+
+      if (pinned && Date.now() - pinnedAt < 1000) {
+        current.value = pinned;
+
+        return;
+      }
+      pinned = '';
+      if (ids.length && atBottom()) {
+        current.value = ids[ids.length - 1];
+
+        return;
+      }
+      const line = (bar.value?.getBoundingClientRect().bottom || 0) + SPY_LINE_PX;
       let cur = ids[0] || '';
 
       ids.forEach((id) => {
         const el = document.getElementById(id);
 
-        if (el && el.getBoundingClientRect().top <= limit) {
+        if (el && el.getBoundingClientRect().top <= line) {
           cur = id;
         }
       });
       current.value = cur;
     }
-    const onScroll = () => {
+    const onScroll = (e: Event) => {
+      if (e.target instanceof HTMLElement) {
+        scroller = e.target;
+      }
       if (!frame) {
         frame = requestAnimationFrame(spy);
       }
@@ -293,6 +333,16 @@ export default defineComponent({
       await nextTick();
       spy();
     };
+
+    // A quick link opens a folded section first, then scrolls to it.
+    async function goTo(id: string) {
+      openSection(id);
+      await nextTick();
+      document.getElementById(id)?.scrollIntoView({ block: 'start' });
+      pinned = id;
+      pinnedAt = Date.now();
+      current.value = id;
+    }
 
     // Table headers stick under the bar: its height, as a CSS variable.
     let resize: ResizeObserver | null = null;
@@ -312,6 +362,20 @@ export default defineComponent({
       }
     });
     watch([toc, empty, report], spyLater);
+    // Arriving with #section in the address: open it and go there once the
+    // first report is shown.
+    const stopHash = watch(report, async(r) => {
+      const id = (window.location.hash || '').slice(1);
+
+      if (r && id && toc.value.some((x) => x.id === id)) {
+        stopHash();
+        await nextTick();
+        goTo(id);
+      } else if (r) {
+        stopHash();
+      }
+    });
+
     onBeforeUnmount(() => {
       document.removeEventListener('scroll', onScroll, { capture: true });
       resize?.disconnect();
@@ -320,39 +384,15 @@ export default defineComponent({
       }
     });
 
-    // The date field reports every typed segment (0002-…, 0020-…); only a
-    // complete date that stays for half a second, or is confirmed with
-    // Enter or by leaving the field, changes the period.
-    let dayTimer: ReturnType<typeof setTimeout> | null = null;
-
-    function commitDay(v: string) {
-      if (dayTimer) {
-        clearTimeout(dayTimer);
-        dayTimer = null;
-      }
-      const d = completeDay(v);
-
-      if (d && d !== view.value.day) {
+    // The date field: see settleDay (Enter, leaving the field, or a value
+    // that stays unchanged; never on each typed digit).
+    const daySettle = settleDay(DAY_SETTLE_MS, (d) => {
+      if (d !== view.value.day) {
         setQuery({ day: d });
       }
-    }
-
-    function typeDay(e: Event) {
-      const v = (e.target as HTMLInputElement).value;
-
-      if (dayTimer) {
-        clearTimeout(dayTimer);
-      }
-      dayTimer = completeDay(v) ? setTimeout(() => commitDay(v), DAY_SETTLE_MS) : null;
-    }
-    onBeforeUnmount(() => dayTimer && clearTimeout(dayTimer));
-
-    // One decimal count for the four cards.
-    const cardMoney = computed(() => {
-      const r = report.value;
-
-      return moneyCol(r ? [r.total, totals.value?.deptSum, r.idle, totals.value?.unalloc] : []);
     });
+
+    onBeforeUnmount(() => daySettle.cancel());
 
     return {
       t,
@@ -362,10 +402,11 @@ export default defineComponent({
       current,
       page,
       bar,
-      cardMoney,
+      fmtMoney,
       loadedView,
-      typeDay,
-      commitDay:  (e: Event) => commitDay((e.target as HTMLInputElement).value),
+      goTo,
+      typeDay:    (e: Event) => daySettle.type((e.target as HTMLInputElement).value),
+      commitDay:  (e: Event) => daySettle.flush((e.target as HTMLInputElement).value),
       report,
       error,
       errorText,
@@ -406,9 +447,9 @@ export default defineComponent({
       <div>
         <div
           class="text-muted cr-small"
-          :class="{ 'cr-accent': view.day }"
+          :class="{ 'cr-accent': loadedView.day }"
         >
-          {{ view.day ? t('costReport.report.subtitleDay', { day: view.day, label: ctx.label }) : t('costReport.report.subtitle', { label: ctx.label }) }}
+          {{ loadedView.day ? t('costReport.report.subtitleDay', { day: loadedView.day, label: ctx.label }) : t('costReport.report.subtitle', { label: ctx.label }) }}
         </div>
         <h1>{{ t('costReport.report.title') }}</h1>
         <div
@@ -554,6 +595,7 @@ export default defineComponent({
             :key="s.id"
             :href="`#${ s.id }`"
             :class="{ active: current === s.id }"
+            @click.prevent="goTo(s.id)"
           >{{ s.text }}</a>
         </nav>
       </div>
@@ -578,14 +620,6 @@ export default defineComponent({
               {{ t('costReport.empty.labels', { label: ctx.label }) }}
             </li>
           </ul>
-          <button
-            v-if="loadedView.day"
-            type="button"
-            class="btn role-primary"
-            @click="backToLive"
-          >
-            {{ t('costReport.dept.backToLive') }}
-          </button>
         </div>
 
         <template v-else>
@@ -594,7 +628,10 @@ export default defineComponent({
             class="cr-banner cr-banner-warning"
           >
             <b>{{ coverage.title }}</b> {{ coverage.text }}
-            <a href="#trust">{{ t('costReport.coverage.more') }}</a>
+            <a
+              href="#trust"
+              @click.prevent="goTo('trust')"
+            >{{ t('costReport.coverage.more') }}</a>
           </div>
 
           <div
@@ -607,12 +644,12 @@ export default defineComponent({
                 :text="t('costReport.totals.total')"
                 :tip="t('costReport.help.total')"
               />
-              <span class="cr-v cr-num">{{ cardMoney(report.total) }} <small class="cr-cur">{{ ctx.currency }}</small></span>
+              <span class="cr-v cr-num">{{ fmtMoney(report.total) }} <small class="cr-cur">{{ ctx.currency }}</small></span>
               <span class="cr-s">{{ t('costReport.totals.totalSub') }}</span>
             </div>
             <div v-else>
               <span class="cr-k">{{ t('costReport.totals.totalScoped') }}</span>
-              <span class="cr-v cr-num">{{ cardMoney(report.total) }} <small class="cr-cur">{{ ctx.currency }}</small></span>
+              <span class="cr-v cr-num">{{ fmtMoney(report.total) }} <small class="cr-cur">{{ ctx.currency }}</small></span>
               <span class="cr-s">{{ t('costReport.totals.totalScopedSub') }}</span>
             </div>
             <div>
@@ -621,7 +658,7 @@ export default defineComponent({
                 :text="totals.deptLabel"
                 :tip="t('costReport.help.deptTotal')"
               />
-              <span class="cr-v cr-num">{{ cardMoney(totals.deptSum) }} <small class="cr-cur">{{ ctx.currency }}</small></span>
+              <span class="cr-v cr-num">{{ fmtMoney(totals.deptSum) }} <small class="cr-cur">{{ ctx.currency }}</small></span>
               <span class="cr-s">{{ t('costReport.totals.deptSub', { pct: share(totals.deptSum, report.total) }) }}</span>
             </div>
             <div v-if="parts && parts.idle">
@@ -630,7 +667,7 @@ export default defineComponent({
                 :text="t('costReport.totals.idle')"
                 :tip="t('costReport.help.idleTotal')"
               />
-              <span class="cr-v cr-num">{{ idleShared ? t('costReport.totals.idleShared') : cardMoney(report.idle) }} <small
+              <span class="cr-v cr-num">{{ idleShared ? t('costReport.totals.idleShared') : fmtMoney(report.idle) }} <small
                 v-if="!idleShared"
                 class="cr-cur"
               >{{ ctx.currency }}</small></span>
@@ -642,7 +679,7 @@ export default defineComponent({
                 :text="t('costReport.totals.unallocated')"
                 :tip="t('costReport.help.unallocated')"
               />
-              <span class="cr-v cr-num">{{ cardMoney(totals.unalloc) }} <small class="cr-cur">{{ ctx.currency }}</small></span>
+              <span class="cr-v cr-num">{{ fmtMoney(totals.unalloc) }} <small class="cr-cur">{{ ctx.currency }}</small></span>
               <span class="cr-s">{{ t('costReport.totals.ofTotal', { pct: share(totals.unalloc, report.total) }) }}</span>
             </div>
           </div>
@@ -698,6 +735,14 @@ export default defineComponent({
             :filter="filter"
           />
         </template>
+      </div>
+      <div
+        v-else-if="loading"
+        class="cr-empty cr-placeholder"
+        aria-busy="true"
+      >
+        <i class="icon icon-spinner icon-spin" />
+        {{ freshness }}
       </div>
     </template>
   </div>

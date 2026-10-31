@@ -72,6 +72,8 @@ costReport:
     dayPeriod: "{day} (UTC; {zone} {from} → {to})"
     today: "Today (UTC), not over yet; the figures still change (updated {age} s ago)"
     localTime: "local time"
+    windowPeriod: "Last {window}: {from} → {to}"
+    dataFrom: " (data from {time})"
   coverage:
     unknownTitle: Completeness cannot be checked
     unknown: "Prometheus is unreachable ({reason}). The amounts below may miss periods that were not measured, and how much cannot be told."
@@ -239,7 +241,7 @@ costReport:
     notes:
       cpuIdle:
         title: Requested, not used
-        text: "{name} requests {req} cores at {eff} CPU efficiency. Nearly all of its {amount} pays for reserved capacity."
+        text: "{name} requests {req} cores at {eff} CPU and {ramEff} memory efficiency. Nearly all of its {amount} pays for reserved capacity."
       ramIdle:
         title: Unused memory
         text: "{name} requests {req} MiB and uses {use} MiB, {eff} efficiency. Looking at CPU alone misses this."
@@ -249,6 +251,12 @@ costReport:
       over:
         title: Using more than requested
         text: "{name} uses more than it requests (efficiency over 100%); its requests should go up."
+      cpuIdleOnly:
+        title: "CPU requested, not used"
+        text: "{name} requests {req} cores at only {eff} CPU efficiency; memory is used ({ramEff}), so only the CPU part of its {amount} pays for reserved capacity."
+      standby:
+        title: "Low usage is not always waste"
+        text: "{name} ({kind}) runs at only {eff} CPU efficiency. Databases, replicas and per-node agents often idle by design; check whether it is standby capacity before lowering its request."
     summary: "{count, plural, =1 {1 workload} other {# workloads}}"
     overRequest: "Uses more than requested: the scheduler reserved only the request, so the excess is a capacity risk, not efficiency"
     summaryTop: "{count, plural, =1 {1 workload} other {# workloads}}; highest {name} {amount} {currency}"
@@ -355,6 +363,8 @@ costReport:
     effectiveNoPromNoReason: "Prometheus could not be reached; no reason was given"
     summary: "Effective coverage {pct}"
     summaryUnknown: "Coverage unknown"
+    reconNoteScaled: "Allocated {allocated} vs asset cost {measured} ({byType}). OpenCost priced the nodes over {assetsMinutes} min; scaled to the allocation's {minutes} min = {assets}. Reconcile with idle included."
+    listSep: ", "
   actions:
     title: To do
     description: Computed from this cluster’s data for the period.
@@ -422,7 +432,7 @@ costReport:
     description: Each day is closed and frozen once. The monthly roll-up comes from these seals, not from Prometheus, so it does not depend on monitoring retention.
     disabled: Sealing is not enabled on this backend.
     months: By month
-    monthsEmpty: "No sealed periods yet. The first seal is made within an hour after the first full UTC day of data ends (after {time} the next day, local time), then one a day; monthly totals add those seals up."
+    monthsEmpty: "No sealed periods yet."
     sealedDays: "{sealed}/{expected} days sealed"
     notOver: " (of {days}; month not over)"
     minCoverage: "lowest daily coverage {pct}%"
@@ -442,7 +452,7 @@ costReport:
       day_marked: Some days need a note on estimates
       all_ok: Every day passed the billing checks
     days: Daily seals
-    daysEmpty: "No day sealed yet. The first seal is made within an hour after the first full UTC day of data ends (after {time} the next day, local time)."
+    daysEmpty: "No day sealed yet."
     col:
       day: Day
       total: Total
@@ -454,6 +464,8 @@ costReport:
     tampered: hash mismatch
     unreadable: seal file unreadable
     scoped: Amounts are the totals of your departments on that day.
+    firstSealRule: "The first seal is made within an hour after the first full UTC day of data ends (after {time} the next day, local time), then one a day; monthly totals add those seals up."
+    firstSealAt: "From the earliest data, the first seal is expected within an hour after {time} ({zone}), then one a day; monthly totals add those seals up."
   help:
     cpuHours: Cores × hours accumulated; 1 core for 2 hours is 2 core-hours. The basis of billing, not instant use.
     ramHours: GiB × hours accumulated. 1 GiB is 2^30 bytes.

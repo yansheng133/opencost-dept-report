@@ -10,9 +10,10 @@ import { useReportContext } from '../../composables/useReportContext';
 import { filterStorage } from '../../utils/scope';
 import { storageNotes } from '../../utils/actions';
 import { storageNoteText } from '../../utils/describe';
-import { capRows, fmtBytes, money, moneyCol } from '../../utils/format';
+import { capRows, fmtBytes } from '../../utils/format';
 import { TABLE_LIMITS } from '../../config/backend';
 import type { Report } from '../../utils/types';
+import { fmtMoney } from '../../utils/money';
 
 export default defineComponent({
   name: 'CostReportStorage',
@@ -35,14 +36,11 @@ export default defineComponent({
     const special = (d: { special?: string | null }) => (d.special ? ctx.value.t(`costReport.storage.special.${ d.special }`) : '');
 
     const summary = computed(() => ctx.value.t('costReport.storage.summary', {
-      count: rows.value.length, amount: money(rows.value.reduce((s, r) => s + (r.cost || 0), 0)), currency: ctx.value.currency
+      count: rows.value.length, amount: fmtMoney(rows.value.reduce((s, r) => s + (r.cost || 0), 0)), currency: ctx.value.currency
     }));
 
-    const costCol = computed(() => moneyCol(rows.value.map((r) => r.cost)));
-    const idleCol = computed(() => moneyCol(rows.value.map((r) => r.idleCost)));
-
     return {
-      ctx, open, rows, shown, notes, special, fmtBytes, money, costCol, idleCol, summary, limit: TABLE_LIMITS.storage
+      ctx, open, rows, shown, notes, special, fmtBytes, fmtMoney, summary, limit: TABLE_LIMITS.storage
     };
   },
 });
@@ -134,10 +132,10 @@ export default defineComponent({
               />
             </td>
             <td class="cr-num">
-              {{ costCol(r.cost) }}
+              {{ fmtMoney(r.cost) }}
             </td>
             <td class="cr-num">
-              {{ r.idleCost === null ? '—' : idleCol(r.idleCost) }}
+              {{ r.idleCost === null ? '—' : fmtMoney(r.idleCost) }}
             </td>
           </tr>
           <tr v-if="!rows.length">

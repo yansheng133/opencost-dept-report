@@ -276,23 +276,22 @@ impl App {
 
     /// Usage series for `window` at `step` (default when `None`).
     pub fn usage_series(&self, window: &str, step: Option<&str>) -> Option<Value> {
+        // Steps offered and configured follow the window as the user named it;
+        // the query is the resolved range (see coverage::resolve_window).
+        let (rs, re) = coverage::resolve_window(window, now())?;
+        let q = coverage::window_param(rs, re);
         let span = coverage::nominal_minutes(window);
         let default =
             steps::default_step(span, self.cfg.series_steps.get(window).map(String::as_str));
         let step = step.map(str::to_string).or_else(|| default.clone())?;
-        let segments = match self.oc.segments(window, &self.cfg.agg_dept(), &step) {
+        let segments = match self.oc.segments(&q, &self.cfg.agg_dept(), &step) {
             Ok(s) => s,
             Err(e) => {
                 eprintln!("{NAME}: warning: cannot read the usage series: {e}");
                 return None;
             }
         };
-        let mut limit = now();
-        if let Some((_, end)) = window.split_once(',') {
-            if let Ok(e) = parse_iso(end.trim()) {
-                limit = limit.min(e as f64);
-            }
-        }
+        let limit = (re as f64).min(now());
         series::build(&SeriesInput {
             segments: &segments,
             step: &step,
@@ -304,6 +303,11 @@ impl App {
 
     /// The full (unscoped) report for an OpenCost window.
     pub fn build_report(&self, window: &str) -> Result<Value, String> {
+        let (rs, re) = coverage::resolve_window(window, now())
+            .ok_or_else(|| format!("{window} has not started yet"))?;
+        let user_window = window;
+        let q = coverage::window_param(rs, re);
+        let window = q.as_str();
         let dept = self.cfg.agg_dept();
         let dept_env = self.cfg.agg_dept_env();
         let a = Allocations {
@@ -361,16 +365,13 @@ impl App {
                 (Some(s), Some(e)) => self.targets(s, e),
                 _ => None,
             },
-            series: self.usage_series(window, None),
+            series: self.usage_series(user_window, None),
             storage: self.storage(&a.by_cc, w_start.as_deref(), w_end.as_deref()),
         };
-        Ok(report::assemble(
-            &self.cfg.report,
-            &a,
-            window,
-            card.as_ref(),
-            &x,
-        ))
+        let mut r = report::assemble(&self.cfg.report, &a, user_window, card.as_ref(), &x);
+        r["window"]["requested"] =
+            json!({ "start": fmt_iso(rs as f64), "end": fmt_iso(re as f64) });
+        Ok(r)
     }
 
     pub fn refresh(&self, window: &str) -> bool {
@@ -504,6 +505,24 @@ impl App {
         known
     }
 
+    /// Earliest data start among the cached reports (the longest window
+    /// reaches furthest back); the page uses it to say when the first
+    /// sealed day will exist.
+    fn data_since(&self) -> Option<String> {
+        self.cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .values()
+            .filter_map(|e| {
+                e.data.as_ref()?["window"]["start"]
+                    .as_str()
+                    .map(str::to_string)
+            })
+            .filter_map(|s| parse_iso(&s).ok())
+            .min()
+            .map(|t| fmt_iso(t as f64))
+    }
+
     fn departments_json(&self, known: &BTreeSet<String>, scope: &Scope) -> Value {
         let mut ids: Vec<&String> = known.iter().filter(|d| scope.allows(d)).collect();
         let order = |id: &str| {
@@ -594,6 +613,7 @@ impl App {
                             "snapshotter": self.snapshotter.is_some(),
                         },
                         "currency": card.and_then(|c| c.currency),
+                        "dataSince": self.data_since(),
                     }),
                 )
             }
@@ -653,6 +673,14 @@ impl App {
                 )
             }
         };
+        if coverage::resolve_window(&window, now()).is_none() {
+            return Response::api_error(
+                400,
+                "bad_window",
+                "this period has not started yet",
+                json!({ "windows": self.cfg.windows }),
+            );
+        }
         let cached = self
             .cache
             .lock()

@@ -24,6 +24,8 @@ export interface BackendConfig {
   labels?: { department?: string; environment?: string; environments?: string[] };
   features?: { seals?: boolean; volumeUsage?: boolean; snapshotter?: boolean; coverage?: boolean };
   currency?: string | null;
+  // Earliest data the backend has seen (ISO), or null.
+  dataSince?: string | null;
 }
 
 export type Status = 'ok' | 'mark' | 'block' | 'unknown';
@@ -212,7 +214,9 @@ export interface Report {
   staleReason: string | null;
   windows: string[];
   scope: Scope;
-  window: { query: string; start: string | null; end: string | null; minutes: number };
+  // requested: the absolute range asked (relative windows end now; a day
+  // that has not ended is cut at now). start/end: what OpenCost returned.
+  window: { query: string; start: string | null; end: string | null; minutes: number; requested?: { start: string; end: string } | null };
   cluster: string;
   coverage: Coverage | null;
   targets: TargetRow[] | null;

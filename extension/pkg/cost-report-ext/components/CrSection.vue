@@ -37,6 +37,13 @@ export const foldAll = ref<{ on: boolean; at: number } | null>(null);
 // about the whole cluster are not filtered, and say so while a filter is on.
 export const activeFilter = ref('all');
 
+// A request to unfold one section (a quick link to it was used).
+export const openRequest = ref<{ id: string; at: number } | null>(null);
+
+export function openSection(id: string) {
+  openRequest.value = { id, at: Date.now() };
+}
+
 export default defineComponent({
   name: 'CrSection',
 
@@ -60,6 +67,7 @@ export default defineComponent({
       saveFolded(props.id, on);
     }
     watch(foldAll, (v) => v && toggle(v.on));
+    watch(openRequest, (v) => v && v.id === props.id && folded.value && toggle(false));
 
     return {
       t, folded, toggle, activeFilter

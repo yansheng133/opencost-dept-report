@@ -9,9 +9,10 @@ import MoreRow from '../MoreRow.vue';
 import { useReportContext } from '../../composables/useReportContext';
 import { visibleParts } from '../../utils/scope';
 import { gapText, fillNoteText } from '../../utils/describe';
-import { capRows, money, pctValue } from '../../utils/format';
+import { capRows, pctValue } from '../../utils/format';
 import { TABLE_LIMITS } from '../../config/backend';
 import type { Report } from '../../utils/types';
+import { fmtMoney } from '../../utils/money';
 
 export default defineComponent({
   name: 'CostReportTrust',
@@ -66,7 +67,7 @@ export default defineComponent({
       out.push({
         item:  t(`${ k }.estimated`),
         value: pctValue(b.estimatedPct || 0),
-        note:  f ? t(`${ k }.estimatedFill`, { amount: money(b.estimatedTotal) }) + (f.snapshotCoveragePct !== null && f.snapshotCoveragePct !== undefined ? t(`${ k }.estimatedFillCoverage`, { pct: f.snapshotCoveragePct }) : '') : t(`${ k }.estimatedNone`),
+        note:  f ? t(`${ k }.estimatedFill`, { amount: fmtMoney(b.estimatedTotal) }) + (f.snapshotCoveragePct !== null && f.snapshotCoveragePct !== undefined ? t(`${ k }.estimatedFillCoverage`, { pct: f.snapshotCoveragePct }) : '') : t(`${ k }.estimatedNone`),
       });
       if (parts.value.reconciliation) {
         const r = props.report.reconciliation!;
@@ -76,11 +77,16 @@ export default defineComponent({
           value: pctValue(r.driftPct),
           // A zero or negative asset total is OpenCost not having priced the
           // nodes yet, not a cost to reconcile against (reason from the backend).
-          note:  r.reason === 'assets_not_positive' ? t(`${ k }.reconNotPositive`, { assets: money(r.assets) }) : r.assets ? t(`${ k }.reconNote`, {
-            allocated: money(r.allocated), assets: money(r.assets), byType: Object.entries(r.byType || {}).map(([x, v]) => `${ x } ${ money(v) }`).join(', ')
-          }) + (r.scaled ? t(`${ k }.reconScaled`, {
-            measured: money(r.assetsMeasured), assetsMinutes: r.assetsMinutes, minutes: r.allocatedMinutes
-          }) : '') : t(`${ k }.reconUnknown`),
+          // The asset components are listed next to the total they add up
+          // to; when the spans differ, that total is then scaled.
+          note:  r.reason === 'assets_not_positive' ? t(`${ k }.reconNotPositive`, { assets: fmtMoney(r.assets) }) : r.assets ? t(r.scaled ? `${ k }.reconNoteScaled` : `${ k }.reconNote`, {
+            allocated:     fmtMoney(r.allocated),
+            assets:        fmtMoney(r.assets),
+            measured:      fmtMoney(r.scaled ? r.assetsMeasured : r.assets),
+            byType:        Object.entries(r.byType || {}).map(([x, v]) => `${ x } ${ fmtMoney(v) }`).join(t(`${ k }.listSep`)),
+            assetsMinutes: r.assetsMinutes,
+            minutes:       r.allocatedMinutes,
+          }) : t(`${ k }.reconUnknown`),
         });
       }
       if (f && f.notes?.length) {
@@ -116,7 +122,7 @@ export default defineComponent({
     cluster-wide
   >
     <div class="cr-table-wrap">
-      <table class="sortable-table cr-table">
+      <table class="sortable-table cr-table cr-trust-table">
         <thead>
           <tr>
             <th>{{ ctx.t('costReport.trust.col.item') }}</th>

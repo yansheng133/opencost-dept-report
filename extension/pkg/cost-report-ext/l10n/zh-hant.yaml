@@ -72,6 +72,8 @@ costReport:
     dayPeriod: "{day}（UTC，{zone} {from} → {to}）"
     today: "今天（UTC），尚未結束，數字還會變動（{age} 秒前更新）"
     localTime: "本機時間"
+    windowPeriod: "最近 {window}：{from} → {to}"
+    dataFrom: "（資料從 {time} 起）"
   coverage:
     unknownTitle: 無法確認資料完整度
     unknown: "連不上 Prometheus（{reason}）。下面的金額可能少算了沒量到的時段，但目前無法判斷少了多少。"
@@ -239,7 +241,7 @@ costReport:
     notes:
       cpuIdle:
         title: 只申請、沒在用
-        text: "{name} 申請 {req} 核，CPU 效率 {eff}。這筆 {amount} 幾乎都是為佔住的容量付的。"
+        text: "{name} 申請 {req} 核，CPU 效率 {eff}、記憶體效率 {ramEff}。這筆 {amount} 幾乎都是為佔住的容量付的。"
       ramIdle:
         title: 記憶體的浪費
         text: "{name} 申請 {req} MiB、實際 {use} MiB，效率 {eff}。只看 CPU 會漏掉這一種。"
@@ -249,6 +251,12 @@ costReport:
       over:
         title: 用得比申請的多
         text: "{name} 效率超過 100%，實際用量高於申請量，應該調高申請值。"
+      cpuIdleOnly:
+        title: "CPU 只申請、沒在用"
+        text: "{name} 申請 {req} 核，CPU 效率只有 {eff}；記憶體效率 {ramEff}，所以這筆 {amount} 只有 CPU 的部分是為佔住的容量付的。"
+      standby:
+        title: "低使用率不等於該砍"
+        text: "{name}（{kind}）CPU 效率只有 {eff}。資料庫、備援副本、每個節點都要有的元件，平常用量本來就低；先確認它是不是待命用的，再決定要不要調低申請值。"
     summary: "{count} 個工作負載"
     overRequest: "實際用量超過申請量：排程時只保留了申請量，用多的部分是容量風險，不是效率好"
     summaryTop: "{count} 個工作負載，最高是 {name} {amount} {currency}"
@@ -355,6 +363,8 @@ costReport:
     effectiveNoPromNoReason: "連不上 Prometheus，沒有收到錯誤原因"
     summary: "實際涵蓋率 {pct}"
     summaryUnknown: "涵蓋率無法判斷"
+    reconNoteScaled: "分攤總額 {allocated} vs 資產成本 {measured}（{byType}）。OpenCost 替節點計價只涵蓋 {assetsMinutes} 分鐘，換算成分攤的 {minutes} 分鐘＝{assets}。對帳要用含閒置的總額。"
+    listSep: "、"
   actions:
     title: 待處理事項
     description: 依這個叢集本期的資料算出來。
@@ -422,7 +432,7 @@ costReport:
     description: 每天結帳一次並凍結。月報的來源是封存，不是 Prometheus，所以不受監控資料保留期限影響。
     disabled: 這個後端沒有開啟帳期封存。
     months: 按月彙總
-    monthsEmpty: "還沒有封存的帳期。第一筆封存在資料涵蓋的第一個完整 UTC 日結束後一小時內產生（本機時間隔天 {time} 後），之後每天一筆，月報由這些封存彙總。"
+    monthsEmpty: "還沒有封存的帳期。"
     sealedDays: "已封存 {sealed}/{expected} 天"
     notOver: "（整月 {days} 天，尚未過完）"
     minCoverage: "最低單日覆蓋率 {pct}%"
@@ -442,7 +452,7 @@ costReport:
       day_marked: 有日子需要標示推估
       all_ok: 每一天都通過出帳關卡
     days: 每日封存
-    daysEmpty: "還沒有封存任何一天。第一筆封存在資料涵蓋的第一個完整 UTC 日結束後一小時內產生（本機時間隔天 {time} 後）。"
+    daysEmpty: "還沒有封存任何一天。"
     col:
       day: 帳期
       total: 總額
@@ -454,6 +464,8 @@ costReport:
     tampered: 雜湊對不上
     unreadable: 封存檔讀不出來
     scoped: 金額是你看得到的部門在那一天的合計。
+    firstSealRule: "第一筆封存在資料涵蓋的第一個完整 UTC 日結束後一小時內產生（本機時間隔天 {time} 後），之後每天一筆；月報由這些封存彙總。"
+    firstSealAt: "依目前最早的資料，第一筆封存預計在 {time}（{zone}）後一小時內產生，之後每天一筆；月報由這些封存彙總。"
   help:
     cpuHours: 核心 × 小時的累計量，1 核跑 2 小時 = 2 核時。這是計價的基礎，不是瞬間用量。
     ramHours: GiB × 小時的累計量。1 GiB 是 2 的 30 次方位元組。

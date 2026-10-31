@@ -15,11 +15,12 @@ import MoreRow from '../components/MoreRow.vue';
 import { getSeals, getPeriods, ApiError } from '../utils/api';
 import { monthDepts } from '../utils/scope';
 import { monthReasonText, missingText } from '../utils/describe';
-import { capRows, moneyCol, pctValue } from '../utils/format';
-import { utcMidnightLocal } from '../utils/day';
+import { capRows, pctValue, fmtLocal, timeZone } from '../utils/format';
+import { firstSealAfter, utcMidnightLocal } from '../utils/day';
 import { reportRoute } from '../config/product';
 import { TABLE_LIMITS } from '../config/backend';
 import type { Month, SealRow, Scope } from '../utils/types';
+import { fmtMoney, setMoneyBasis } from '../utils/money';
 
 export default defineComponent({
   name: 'CostReportPeriods',
@@ -70,6 +71,8 @@ export default defineComponent({
         }
         if (p.status === 'fulfilled') {
           months.value = [...(p.value.months || [])].reverse();
+          // One precision for the page, from the largest month.
+          setMoneyBasis(Math.max(0, ...months.value.map((m) => Math.abs(m.total || 0))));
         } else {
           months.value = [];
           error.value = error.value || (p.reason instanceof ApiError ? p.reason : null);
@@ -85,13 +88,8 @@ export default defineComponent({
     onMounted(() => backend.ensure());
 
     const thisMonth = new Date().toISOString().slice(0, 7);
-    // One decimal count for all month totals, one per month for its
-    // departments, one for the daily totals.
-    const monthMoney = computed(() => moneyCol(months.value.map((m) => m.total)));
-    const dayMoney = computed(() => moneyCol(seals.value.map((x) => x.total)));
     const monthView = computed(() => months.value.map((m) => ({
       ...m,
-      deptMoney:   moneyCol(monthDepts(m).map((d) => d.total)),
       reasonText:  monthReasonText(t, m),
       deptList:    monthDepts(m),
       missingList: missingText(t, m.missingDays || []),
@@ -111,14 +109,17 @@ export default defineComponent({
       scope,
       error,
       loading,
-      monthMoney,
-      dayMoney,
-      // When the first seal can appear: an hour after the first full UTC day
-      // ends, i.e. after UTC midnight in the reader's own clock.
-      sealTime: utcMidnightLocal(),
+      fmtMoney,
+      // When the first seal can appear, said once for both lists: from the
+      // backend's earliest data when known, else the rule.
+      firstSeal: computed(() => {
+        const at = firstSealAfter(config.value?.dataSince);
+
+        return at === null ? t('costReport.periods.firstSealRule', { time: utcMidnightLocal() }) : t('costReport.periods.firstSealAt', { time: fmtLocal(new Date(at).toISOString(), true), zone: timeZone() || t('costReport.report.localTime') });
+      }),
       pctValue,
       reportRoute,
-      limit:    TABLE_LIMITS.seals,
+      limit: TABLE_LIMITS.seals,
     };
   },
 });
@@ -162,6 +163,13 @@ export default defineComponent({
         {{ t('costReport.periods.scoped') }}
       </p>
 
+      <div
+        v-if="enabled && !loading && !seals.length"
+        class="cr-banner cr-banner-info"
+      >
+        {{ firstSeal }}
+      </div>
+
       <section
         id="months"
         class="cr-section"
@@ -177,7 +185,7 @@ export default defineComponent({
           v-else-if="!monthView.length"
           class="text-muted"
         >
-          {{ t('costReport.periods.monthsEmpty', { time: sealTime }) }}
+          {{ t('costReport.periods.monthsEmpty') }}
         </p>
         <div
           v-for="m in monthView"
@@ -190,7 +198,7 @@ export default defineComponent({
               class="cr-tag"
               :class="m.verdict"
             >{{ t(`costReport.periods.verdict.${ m.verdict }`) }}</span>
-            <span class="cr-month-amt cr-num">{{ monthMoney(m.total) }}</span>
+            <span class="cr-month-amt cr-num">{{ fmtMoney(m.total) }}</span>
           </div>
           <div
             v-if="m.reasonText"
@@ -208,7 +216,7 @@ export default defineComponent({
             ><span
               class="cr-swatch"
               :style="{ background: ctx.depts.color(d.id) }"
-            />{{ ctx.depts.name(d.id) }} <b class="cr-num">{{ m.deptMoney(d.total) }}</b></span>
+            />{{ ctx.depts.name(d.id) }} <b class="cr-num">{{ fmtMoney(d.total) }}</b></span>
           </div>
           <div class="text-muted cr-small">
             {{ t('costReport.periods.sealedDays', { sealed: m.sealedDays, expected: m.expectedDays }) }}<span v-if="m.current">{{ t('costReport.periods.notOver', { days: m.monthDays }) }}</span>
@@ -283,7 +291,7 @@ export default defineComponent({
                   </router-link>
                 </td>
                 <td class="cr-num">
-                  {{ s.total === null || s.total === undefined ? '—' : dayMoney(s.total) }}
+                  {{ s.total === null || s.total === undefined ? '—' : fmtMoney(s.total) }}
                 </td>
                 <td class="cr-num">
                   {{ pctValue(s.coveragePct) }}
@@ -317,7 +325,7 @@ export default defineComponent({
                   colspan="6"
                   class="text-muted"
                 >
-                  {{ t('costReport.periods.daysEmpty', { time: sealTime }) }}
+                  {{ t('costReport.periods.daysEmpty') }}
                 </td>
               </tr>
               <MoreRow

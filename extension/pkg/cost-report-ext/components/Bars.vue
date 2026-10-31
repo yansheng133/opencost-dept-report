@@ -3,7 +3,7 @@
 // are the ones that are not a department's own cost (idle, other
 // environments). The value and its note are text, not only the bar.
 import { defineComponent, PropType, computed } from 'vue';
-import { moneyCol } from '../utils/format';
+import { fmtMoney } from '../utils/money';
 
 export interface BarRow {
   key: string;
@@ -24,10 +24,8 @@ export default defineComponent({
     const max = computed(() => Math.max(...props.rows.map((r) => r.value), 0.0001));
     // Zero draws nothing: a sliver would read as "a little".
     const width = (v: number) => (v > 0 ? `${ Math.max(v / max.value * 100, 0.6) }%` : '0');
-    // One decimal count for the whole list.
-    const fmt = computed(() => moneyCol(props.rows.map((r) => r.value)));
 
-    return { width, fmt };
+    return { width, fmtMoney };
   },
 });
 </script>
@@ -59,7 +57,7 @@ export default defineComponent({
         />
       </div>
       <div class="cr-bar-val cr-num">
-        {{ fmt(r.value) }}<span
+        {{ fmtMoney(r.value) }}<span
           v-if="r.note && r.value > 0"
           class="text-muted cr-gap-l"
         >{{ r.note }}</span>
