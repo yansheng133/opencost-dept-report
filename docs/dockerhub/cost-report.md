@@ -9,8 +9,9 @@
 
 | 標籤 | 內容 |
 |---|---|
-| `1.0.0`、`1.0` | Rust 版：Kubernetes aggregated API、宣告量快照器、PVC 用量量測，一個執行檔（`server`／`snapshotter`／`volume-usage`／`fallback`） |
-| `1.0.0-rc.*` | 1.0.0 的測試版，只有 arm64，不要用 |
+| `1.9.0`、`1.9` | 目前的版本。Rust 版：Kubernetes aggregated API、宣告量快照器、PVC 用量量測，一個執行檔（`server`／`snapshotter`／`volume-usage`／`fallback`） |
+| `1.0.0`、`1.0` | 第一個 Rust 版，保留供舊部署使用。1.1～1.8 只在 GHCR，沒有複製到這裡 |
+| `1.*-rc.*` | 測試版，只有 arm64，不要用 |
 | `0.x`、`latest` | 2026-09 的 Python 版（單檔網頁、**沒有登入機制**），不再更新。`latest` 停在 0.10.0，不會指向 1.x |
 
 部署請用 Helm chart，並以 digest 指定映像檔：
@@ -27,7 +28,7 @@ helm install cost-report cost-report/cost-report -n cost-report --create-namespa
 - cosign keyless 簽章，每個架構附 SPDX SBOM：
 
 ```bash
-cosign verify docker.io/yansheng133/cost-report:1.0.0 \
+cosign verify docker.io/yansheng133/cost-report:1.9.0 \
   --certificate-identity-regexp 'https://github.com/yansheng133/opencost-dept-report/.github/workflows/image.yml@refs/tags/v.*' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
