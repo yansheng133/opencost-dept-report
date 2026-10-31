@@ -121,6 +121,7 @@ OpenCost 最新的幾分鐘會晚一點才寫入，所以區間結束在現在�
 - `storage.rows[].depts[]` 是 `{ "id", "cost", "special" }`，`special` 是 `null`、`unallocated`、`unmounted` 或 `idle`（取代舊版的中文標籤）。
 - `ccEnv[]` 的環境欄位改成 `{ "dept": "rd", "envs": { "prod": 1.2, "dev": 0.4 }, "other": 0.1 }`，環境值由 `labels.environments` 決定，不再寫死 prod／dev。
 - `unallocRows[].system` 依 chart 的 `systemNamespaces` 判斷。
+- `workloads[].cpuUse`、`cpuEff` 與序列的 CPU 使用率，都已換算成「每涵蓋分鐘」的平均（OpenCost 原本除以要求的區間長度，資料沒涵蓋整段時會低估）。
 - `workloads[].cpuEff`／`ramEff` 在沒有申請量時是 `null`（OpenCost 原本回 1.0，看起來像「完美」）。
 - `stale` 在報表超過三個 `ttlSeconds` 沒更新時也是 `true`。
 - `series.points[].partial`：這一段涵蓋不到取樣間隔的 90%（資料開頭、斷層後第一段、還沒結束的最後一段），平均值會偏低。

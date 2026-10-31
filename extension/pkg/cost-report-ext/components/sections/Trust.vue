@@ -58,11 +58,19 @@ export default defineComponent({
         out.push({
           item: t(`${ k }.gaps`), value: t(`${ k }.gapsValue`, { minutes: missingMinutes(cov).inside }), note: cov.measuredStep ? t(`${ k }.gapsNoteMeasured`, { seconds: dash(cov.stepSeconds) }) : t(`${ k }.gapsNoteGuessed`)
         });
-        const gaps = cov.gaps || [];
+        // Breaks inside the data are the problems; gaps at the start or end of
+        // the data are where it begins or stops, listed on their own line.
+        const inner = (cov.gaps || []).filter((g) => !g.edge);
+        const edges = (cov.gaps || []).filter((g) => g.edge);
 
         out.push({
-          item: t(`${ k }.gapList`), value: gaps.length ? t(`${ k }.gapListValue`, { count: gaps.length }) : t(`${ k }.gapListNone`), note: gaps.map((g) => gapText(t, g)).join('; ') || t(`${ k }.gapListNoneNote`)
+          item: t(`${ k }.gapList`), value: inner.length ? t(`${ k }.gapListValue`, { count: inner.length }) : t(`${ k }.gapListNone`), note: inner.map((g) => gapText(t, g)).join('; ') || t(`${ k }.gapListNoneNote`)
         });
+        if (edges.length) {
+          out.push({
+            item: t(`${ k }.edgeList`), value: t(`${ k }.edgeListValue`, { minutes: Math.round(edges.reduce((a, g) => a + g.minutes, 0)) }), note: edges.map((g) => gapText(t, g)).join('; ')
+          });
+        }
       }
       out.push({
         item:  t(`${ k }.estimated`),

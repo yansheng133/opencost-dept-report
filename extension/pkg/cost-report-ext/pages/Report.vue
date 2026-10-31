@@ -14,7 +14,7 @@ import { provideReportContext } from '../composables/useReportContext';
 import TargetBar from '../components/TargetBar.vue';
 import AgeText from '../components/AgeText.vue';
 import Help from '../components/Help.vue';
-import { foldAll, activeFilter, openSection } from '../components/CrSection.vue';
+import { foldAll, activeFilter, openSection, foldChanged } from '../components/CrSection.vue';
 import Gate from '../components/sections/Gate.vue';
 import Departments from '../components/sections/Departments.vue';
 import Usage from '../components/sections/Usage.vue';
@@ -25,7 +25,7 @@ import Unallocated from '../components/sections/Unallocated.vue';
 import Trust from '../components/sections/Trust.vue';
 import Actions from '../components/sections/Actions.vue';
 import Rates from '../components/sections/Rates.vue';
-import { getReport, ApiError, validDay } from '../utils/api';
+import { getReport, ApiError, validDay, errorText as apiErrorText } from '../utils/api';
 import { visibleParts, validFilter } from '../utils/scope';
 import { gapText, missingMinutes, isEmptyPeriod } from '../utils/describe';
 import {
@@ -33,10 +33,10 @@ import {
 } from '../utils/format';
 import { dayField, dayLocalRange, isOngoingDay, DayProblem } from '../utils/day';
 import {
-  SPY_FRACTION, SPY_MIN_PX, COVERAGE_WARN_PCT, REFRESH_INTERVAL_MS, THIN_SAMPLE_FACTOR
+  DAY_HINT_MS, SPY_FRACTION, SPY_MIN_PX, COVERAGE_WARN_PCT, REFRESH_INTERVAL_MS, THIN_SAMPLE_FACTOR
 } from '../config/backend';
 import type { Report } from '../utils/types';
-import { fmtMoney, setMoneyBasis } from '../utils/money';
+import { fmtMoney, moneyDigits, setMoneyBasis } from '../utils/money';
 
 export default defineComponent({
   name: 'CostReportPage',
@@ -257,7 +257,7 @@ export default defineComponent({
         return '';
       }
 
-      return e.code === 'series_budget' ? t('costReport.errors.series_budget', { seconds: e.retryAfterSeconds ?? '?' }) : t(`costReport.errors.${ e.code }`);
+      return apiErrorText(t, e);
     });
     const toc = computed(() => {
       const p = parts.value;
@@ -367,6 +367,9 @@ export default defineComponent({
       if (e.target instanceof HTMLElement) {
         scroller = e.target;
       }
+      if (dayProblem.value) {
+        clearProblem();
+      }
       if (!frame) {
         frame = requestAnimationFrame(spy);
       }
@@ -411,7 +414,8 @@ export default defineComponent({
         resize?.observe(el);
       }
     });
-    watch([toc, empty, report], spyLater);
+    // Also after any section folds or unfolds: everything below it moved.
+    watch([toc, empty, report, foldChanged], spyLater);
     // Arriving with #section in the address: open it and go there once the
     // first report is shown.
     const stopHash = watch(report, async(r) => {
@@ -438,6 +442,27 @@ export default defineComponent({
     // typed dates only on Enter or leaving the field). Days before the
     // earliest data or after today (UTC) are refused with a reason.
     const dayProblem = ref<DayProblem>(null);
+    // The hint is short-lived: it goes away on new input, on clearing the
+    // field, on scrolling and after a few seconds, so it never floats over
+    // the page.
+    let hintTimer: ReturnType<typeof setTimeout> | null = null;
+
+    function clearProblem() {
+      if (hintTimer) {
+        clearTimeout(hintTimer);
+        hintTimer = null;
+      }
+      dayProblem.value = null;
+    }
+
+    function showProblem(p: DayProblem) {
+      clearProblem();
+      dayProblem.value = p;
+      if (p) {
+        hintTimer = setTimeout(clearProblem, DAY_HINT_MS);
+      }
+    }
+    onBeforeUnmount(clearProblem);
     // What the field shows. While it has focus it keeps what is being
     // typed; any re-render (data refresh, a ticking clock) must not reset it
     // to the period's day. It follows the period again on commit and blur.
@@ -457,10 +482,8 @@ export default defineComponent({
           setQuery({ day: d });
         }
       },
-      onProblem: (p) => {
-        dayProblem.value = p;
-      },
-      range: () => ({ min: dayMin.value, max: dayMax.value }),
+      onProblem: (p) => showProblem(p),
+      range:     () => ({ min: dayMin.value, max: dayMax.value }),
     });
 
     return {
@@ -472,6 +495,7 @@ export default defineComponent({
       page,
       bar,
       fmtMoney,
+      moneyDigits,
       loadedView,
       goTo,
       dayProblem,
@@ -486,6 +510,7 @@ export default defineComponent({
       },
       dayInput:   (e: Event) => {
         dayDraft.value = (e.target as HTMLInputElement).value;
+        clearProblem();
       },
       dayChange:  (e: Event) => {
         dayDraft.value = (e.target as HTMLInputElement).value;
@@ -494,6 +519,9 @@ export default defineComponent({
       dayCommit:  (e: Event) => field.flush((e.target as HTMLInputElement).value),
       dayBlur:    (e: Event) => {
         dayFocused.value = false;
+        // Leaving the field closes an earlier hint; checking the value on
+        // the way out may show a new one, for a few seconds.
+        clearProblem();
         field.flush((e.target as HTMLInputElement).value);
         // A value that was not used goes back to the period's day (the hint
         // says why); a used one is the new day.
@@ -801,6 +829,9 @@ export default defineComponent({
           </div>
           <p class="text-muted cr-small">
             {{ t('costReport.report.unit', { currency: ctx.currency }) }} ·
+            <template v-if="moneyDigits === 4">
+              {{ t('costReport.report.precision4') }} ·
+            </template>
             {{ t('costReport.report.sample', { minutes: report.window.minutes, factor: month.toFixed(1) }) }}
             <b
               v-if="thin"

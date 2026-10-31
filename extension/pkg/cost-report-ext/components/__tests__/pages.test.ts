@@ -187,6 +187,60 @@ describe('部門成本', () => {
     w.unmount();
   });
 
+  it('the date hint closes on new input instead of floating over the page', async() => {
+    serve({
+      [GV]: [200, {}], [`${ GV }/config`]: [200, { ...config, dataSince: '2026-09-21T10:27:00Z' }], [`${ GV }/reports`]: [200, report()]
+    });
+    const w = await mountPage('Report');
+    const input = w.find('input[type="date"]');
+    const el = input.element as HTMLInputElement;
+
+    await input.trigger('focus');
+    await input.trigger('keydown', { key: '2' });
+    el.value = '2026-01-01';
+    await input.trigger('input');
+    await input.trigger('keydown', { key: 'Enter' });
+    expect(w.find('.cr-day-hint').exists()).toBe(true);
+    expect(w.find('.cr-day-hint').text()).toContain('costReport.dept.dayProblem.before');
+    el.value = '2026-09-2';
+    await input.trigger('input');
+    expect(w.find('.cr-day-hint').exists()).toBe(false);
+    w.unmount();
+  });
+
+  it('a table inside a scrolling wrapper does not get a sticky header (CSS contract)', async() => {
+    // jsdom has no layout, so the rule itself is checked: a sticky header in
+    // a scrolling wrapper sticks to the wrapper and covered the totals row.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const css: string = require('fs').readFileSync(require('path').join(__dirname, '../../styles/report.scss'), 'utf8');
+
+    expect(css).toMatch(/\.cr-table-wrap\.cr-scroll-x \.cr-table\.cr-table thead th \{\s*position: static;/);
+    expect(css).toMatch(/@media \(max-width: 1100px\) \{\s*\.cr-table-wrap \.cr-table\.cr-table thead th \{\s*position: static;/);
+    serve({
+      [GV]: [200, {}], [`${ GV }/config`]: [200, config], [`${ GV }/reports`]: [200, report()]
+    });
+    const w = await mountPage('Report');
+
+    // The department table is the one in a scrolling wrapper.
+    expect(w.find('#dept .cr-table-wrap.cr-scroll-x table.cr-dept-table').exists()).toBe(true);
+    expect(w.findAll('.cr-table-wrap.cr-scroll-x').length).toBe(1);
+    w.unmount();
+  });
+
+  it('the whole section title folds the section', async() => {
+    serve({
+      [GV]: [200, {}], [`${ GV }/config`]: [200, config], [`${ GV }/reports`]: [200, report()]
+    });
+    const w = await mountPage('Report');
+    const btn = w.find('#workloads h2 button.cr-fold-btn');
+
+    expect(btn.attributes('aria-expanded')).toBe('true');
+    expect(btn.text()).toContain('costReport.workloads.title');
+    await btn.trigger('click');
+    expect(w.find('#workloads h2 button.cr-fold-btn').attributes('aria-expanded')).toBe('false');
+    w.unmount();
+  });
+
   it('no department: a friendly empty state, no report request', async() => {
     const asked = serve({
       [GV]:               [200, {}],

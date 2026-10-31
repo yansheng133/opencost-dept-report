@@ -46,7 +46,7 @@ RUN zypper --installroot /chroot -n --gpg-auto-import-keys install --no-recommen
 
 FROM micro
 ARG GIT_SHA=unknown
-ARG VERSION=1.5.0
+ARG VERSION=1.6.0
 COPY --from=installer /chroot/ /
 COPY --from=builder /out/cost-report /usr/local/bin/cost-report
 # Fail the build here, not in the cluster, if a shared library or glibc

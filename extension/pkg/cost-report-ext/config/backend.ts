@@ -20,6 +20,9 @@ export const REFRESH_INTERVAL_MS = 60 * 1000;
 // far down the visible area below the sticky bar (at least SPY_MIN_PX).
 export const SPY_FRACTION = 1 / 3;
 
+// How long the date field's hint stays (it also closes on input and scroll).
+export const DAY_HINT_MS = 4000;
+
 export const SPY_MIN_PX = 40;
 
 // Below this the coverage banner is shown (the backend's gate decides

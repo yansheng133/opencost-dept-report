@@ -77,6 +77,8 @@ costReport:
     windowPeriod: "Last {window}: {from} → {to}"
     dataFrom: " (data from {time})"
     ingestLag: " (excluding the last {minutes} min, not yet written by OpenCost)"
+    precision4: "Amounts this period are small and shown with four decimals."
+    foldToggle: "Fold or unfold “{title}”"
   coverage:
     unknownTitle: Completeness cannot be checked
     unknown: "Prometheus is unreachable ({reason}). The amounts below may miss periods that were not measured, and how much cannot be told."
@@ -341,7 +343,7 @@ costReport:
     effectiveNoProm: "Prometheus unreachable: {reason}"
     effectiveNote: "= scrape coverage {scrape}% × window coverage {window}. The first catches breaks inside the measured span, the second the part of the period without any data."
     requested: Requested vs covered
-    requestedValue: "{measured} / {requested} min"
+    requestedValue: "{requested} / {measured} min"
     requestedNote: A big difference means data was cut off at the start or end of the period.
     gaps: Scrape gaps
     gapsValue: "{minutes} min"
@@ -384,6 +386,8 @@ costReport:
     reconNoteScaled: "Allocated {allocated} vs asset cost {measured} ({byType}). OpenCost priced the nodes over {assetsMinutes} min; scaled to the allocation's {minutes} min = {assets}. Reconcile with idle included."
     listSep: ", "
     targetChanged: "Number of targets changed ({min}–{max})"
+    edgeList: "Start / end of data"
+    edgeListValue: "{minutes} min"
   actions:
     title: To do
     description: Computed from this cluster’s data for the period.

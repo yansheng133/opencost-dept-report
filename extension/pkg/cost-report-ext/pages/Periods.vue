@@ -12,7 +12,7 @@ import { provideReportContext } from '../composables/useReportContext';
 import TargetBar from '../components/TargetBar.vue';
 import Help from '../components/Help.vue';
 import MoreRow from '../components/MoreRow.vue';
-import { getSeals, getPeriods, ApiError } from '../utils/api';
+import { getSeals, getPeriods, ApiError, errorText } from '../utils/api';
 import { monthDepts } from '../utils/scope';
 import { monthReasonText, missingText } from '../utils/describe';
 import { capRows, pctValue, fmtLocal, timeZone } from '../utils/format';
@@ -99,6 +99,7 @@ export default defineComponent({
 
     return {
       t,
+      errorText,
       ctx,
       clusterId,
       seals,
@@ -161,7 +162,7 @@ export default defineComponent({
         v-else-if="error"
         class="cr-banner cr-banner-error"
       >
-        {{ t(`costReport.errors.${ error.code }`) }} <span class="text-muted cr-small">({{ error.message }})</span>
+        {{ errorText(t, error) }} <span class="text-muted cr-small">({{ error.message }})</span>
       </div>
       <div
         v-if="!enabled"

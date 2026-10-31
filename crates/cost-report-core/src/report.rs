@@ -191,6 +191,9 @@ pub struct Extras {
     pub targets: Option<Vec<Value>>,
     pub series: Option<Value>,
     pub storage: Value,
+    /// Minutes of the window asked of OpenCost (CPU usage averages are
+    /// divided by it, see `num::cpu_usage`).
+    pub requested_minutes: Option<f64>,
 }
 
 /// Build the report.
@@ -294,12 +297,12 @@ pub fn assemble(
             "name": wname, "kind": kind, "ns": ns, "dept": cc, "env": env,
             "total": r4(field(v, "totalCost")),
             "cpuReq": round(field(v, "cpuCoreRequestAverage"), 3),
-            "cpuUse": round(field(v, "cpuCoreUsageAverage"), 3),
+            "cpuUse": round(crate::num::cpu_usage(v, x.requested_minutes), 3),
             "ramReqMi": (field(v, "ramByteRequestAverage") / MIB).round(),
             "ramUseMi": (field(v, "ramByteUsageAverage") / MIB).round(),
             // No request, no efficiency: OpenCost reports 1.0 there, which
             // reads as "perfect" for a workload using capacity it never asked for.
-            "cpuEff": (field(v, "cpuCoreRequestAverage") > 0.0).then(|| round(field(v, "cpuEfficiency"), 3)),
+            "cpuEff": crate::num::cpu_efficiency(v, x.requested_minutes).map(|e| round(e, 3)),
             "ramEff": (field(v, "ramByteRequestAverage") > 0.0).then(|| round(field(v, "ramEfficiency"), 3)),
         }));
     }

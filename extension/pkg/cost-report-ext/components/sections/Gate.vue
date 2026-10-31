@@ -9,7 +9,7 @@ import {
 } from 'vue';
 import { useReportContext } from '../../composables/useReportContext';
 import {
-  foldAll, foldedSet, saveFolded, activeFilter, openRequest
+  foldAll, foldedSet, saveFolded, activeFilter, openRequest, foldChanged
 } from '../CrSection.vue';
 import { gateCheckText, gateSummary, gateVerdictText } from '../../utils/describe';
 import { n2, pctValue } from '../../utils/format';
@@ -30,6 +30,7 @@ export default defineComponent({
     function toggle(on = !folded.value) {
       folded.value = on;
       saveFolded(ID, on);
+      foldChanged.value++;
     }
     watch(foldAll, (v) => v && toggle(v.on));
     watch(openRequest, (v) => v && v.id === ID && folded.value && toggle(false));
@@ -54,16 +55,19 @@ export default defineComponent({
     :class="[gate.verdict, { folded }]"
   >
     <div class="cr-gate-head">
-      <button
-        type="button"
-        class="btn btn-sm role-link cr-fold"
-        :aria-expanded="!folded"
-        :title="folded ? ctx.t('costReport.report.unfold') : ctx.t('costReport.report.fold')"
-        @click="toggle()"
-      >
-        <i :class="folded ? 'icon icon-chevron-right' : 'icon icon-chevron-down'" />
-      </button>
-      <h2>{{ ctx.t('costReport.gate.title') }}</h2>
+      <h2>
+        <button
+          type="button"
+          class="cr-fold-btn"
+          :aria-expanded="!folded"
+          :aria-label="ctx.t('costReport.report.foldToggle', { title: ctx.t('costReport.gate.title') })"
+          :title="folded ? ctx.t('costReport.report.unfold') : ctx.t('costReport.report.fold')"
+          @click="toggle()"
+        >
+          <i :class="folded ? 'icon icon-chevron-right' : 'icon icon-chevron-down'" />
+          <span>{{ ctx.t('costReport.gate.title') }}</span>
+        </button>
+      </h2>
       <span
         class="cr-tag"
         :class="gate.verdict"

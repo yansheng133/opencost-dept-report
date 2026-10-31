@@ -11,7 +11,9 @@ import type {
 
 export type ErrorCode =
   | 'bad_window' | 'bad_step' | 'no_department' | 'not_found' | 'series_budget'
-  | 'upstream' | 'not_ready' | 'unauthenticated'
+  | 'upstream' | 'no_segments' | 'not_ready' | 'unauthenticated'
+  // A code this page does not know: its text is the backend's message.
+  | 'other'
   // Not from the backend: the API server refused (RBAC), the request did
   // not get through, or the answer was not understood.
   | 'forbidden' | 'unreachable' | 'unavailable' | 'invalid';
@@ -32,7 +34,22 @@ export class ApiError extends Error {
   }
 }
 
-const KNOWN: ErrorCode[] = ['bad_window', 'bad_step', 'no_department', 'not_found', 'series_budget', 'upstream', 'not_ready', 'unauthenticated'];
+const KNOWN: ErrorCode[] = ['bad_window', 'bad_step', 'no_department', 'not_found', 'series_budget', 'upstream', 'no_segments', 'not_ready', 'unauthenticated'];
+
+/**
+ * The text of an error: the page's own for known codes, the backend's
+ * message for codes it does not know.
+ */
+export function errorText(t: (k: string, a?: Record<string, unknown>) => string, e: ApiError): string {
+  if (e.code === 'other') {
+    return e.message;
+  }
+  if (e.code === 'series_budget') {
+    return t('costReport.errors.series_budget', { seconds: e.retryAfterSeconds ?? '?' });
+  }
+
+  return t(`costReport.errors.${ e.code }`);
+}
 
 /** The error an unsuccessful answer stands for. */
 export function errorFrom(status: number, body: unknown): ApiError {
@@ -49,6 +66,9 @@ export function errorFrom(status: number, body: unknown): ApiError {
 
   if (typeof e.code === 'string' && (KNOWN as string[]).includes(e.code)) {
     code = e.code as ErrorCode;
+  } else if (typeof e.code === 'string' && e.code && typeof e.message === 'string' && e.message) {
+    // A newer backend's code: show what it says rather than "not understood".
+    code = 'other';
   } else if (status === 403) {
     code = 'forbidden';
   } else if (status === 503) {

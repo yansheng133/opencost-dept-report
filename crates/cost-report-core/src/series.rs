@@ -74,7 +74,10 @@ pub fn build(input: &SeriesInput<'_>) -> Option<Value> {
         let minutes = rs.first().map(|(_, v)| f(v.get("minutes"))).unwrap_or(0.0);
         // Slivers of a few minutes at the edges would become spikes that
         // never happened; treat them as no data.
-        if rs.is_empty() || minutes < step_min * 0.25 {
+        // At most an hour: with usage per covered minute (num::cpu_usage) a
+        // few hours of a 1-day step are meaningful, and dropping them left a
+        // 7-day chart at 1 d with no points at all.
+        if rs.is_empty() || minutes < (step_min * 0.25).min(60.0) {
             points.push(json!({ "start": fmt_iso(seg_start(idx)), "depts": null }));
             continue;
         }
@@ -87,10 +90,10 @@ pub fn build(input: &SeriesInput<'_>) -> Option<Value> {
             depts.insert(
                 (*dept).clone(),
                 json!({
-                    "cpu": (req_cpu > 0.0).then(|| round(f(v.get("cpuEfficiency")), 4)),
+                    "cpu": crate::num::cpu_efficiency(v, Some(step_min)).map(|e| round(e, 4)),
                     "ram": (req_ram > 0.0).then(|| round(f(v.get("ramEfficiency")), 4)),
                     "cpuReq": round(req_cpu, 3),
-                    "cpuUse": round(f(v.get("cpuCoreUsageAverage")), 3),
+                    "cpuUse": round(crate::num::cpu_usage(v, Some(step_min)), 3),
                 }),
             );
         }
@@ -164,6 +167,30 @@ mod tests {
         assert!(pts[2]["depts"].is_null());
         assert_eq!(s["covered"], 2);
         assert_eq!(s["expected"], 5);
+    }
+
+    #[test]
+    fn short_segment_of_a_long_step_counts() {
+        // A 1-day step with 290 minutes of data today: kept (not under the
+        // 60-minute cap), partial, and its CPU usage per covered minute.
+        let segs = vec![
+            json!({"rd": {"start": "2026-10-31T01:20:00Z", "minutes": 290.0,
+            "cpuCoreRequestAverage": 0.1, "cpuCoreUsageAverage": 0.0024 * 1440.0 / 1440.0}}),
+        ];
+        let s = build(&SeriesInput {
+            segments: &segs,
+            step: "1d",
+            span: Some(10_080.0),
+            default_step: None,
+            limit: 1e12,
+        })
+        .unwrap();
+        let p = &s["points"][0];
+        assert_eq!(p["partial"], true);
+        assert!(
+            (p["depts"]["rd"]["cpu"].as_f64().unwrap() - 0.0024 * 1440.0 / 290.0 / 0.1).abs()
+                < 1e-3
+        );
     }
 
     #[test]

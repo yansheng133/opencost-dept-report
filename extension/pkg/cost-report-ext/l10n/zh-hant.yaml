@@ -77,6 +77,8 @@ costReport:
     windowPeriod: "最近 {window}：{from} → {to}"
     dataFrom: "（資料從 {time} 起）"
     ingestLag: "（不含最近 {minutes} 分鐘，OpenCost 尚未寫入）"
+    precision4: "本期金額較小，以四位小數顯示。"
+    foldToggle: "收合或展開「{title}」"
   coverage:
     unknownTitle: 無法確認資料完整度
     unknown: "連不上 Prometheus（{reason}）。下面的金額可能少算了沒量到的時段，但目前無法判斷少了多少。"
@@ -341,7 +343,7 @@ costReport:
     effectiveNoProm: "連不上 Prometheus：{reason}"
     effectiveNote: "= 抓取覆蓋率 {scrape}% × 區間涵蓋率 {window}。前者看有資料的那段裡有沒有中斷，後者看要求的區間有多少根本沒有資料。"
     requested: 要求 vs 實際涵蓋
-    requestedValue: "{measured} / {requested} 分鐘"
+    requestedValue: "{requested} / {measured} 分鐘"
     requestedNote: 差很多代表資料在區間的頭或尾被截斷了。
     gaps: 抓取斷層
     gapsValue: "{minutes} 分鐘"
@@ -384,6 +386,8 @@ costReport:
     reconNoteScaled: "分攤總額 {allocated} vs 資產成本 {measured}（{byType}）。OpenCost 替節點計價只涵蓋 {assetsMinutes} 分鐘，換算成分攤的 {minutes} 分鐘＝{assets}。對帳要用含閒置的總額。"
     listSep: "、"
     targetChanged: "目標數有變動（{min}～{max}）"
+    edgeList: "資料開頭／結尾"
+    edgeListValue: "{minutes} 分鐘"
   actions:
     title: 待處理事項
     description: 依這個叢集本期的資料算出來。

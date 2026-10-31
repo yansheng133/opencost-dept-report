@@ -183,6 +183,9 @@ impl App {
 
     fn fill(&self, gaps: &[Value], rates: &cost_report_core::billing::Rates) -> Option<Value> {
         let snap = self.snapshotter.as_ref()?;
+        // Gaps at the edge of the data range are where data starts or stops,
+        // not unmeasured time inside it: nothing to fill.
+        let gaps: Vec<&Value> = gaps.iter().filter(|g| g["edge"] != json!(true)).collect();
         if gaps.is_empty() {
             return None;
         }
@@ -378,6 +381,7 @@ impl App {
             },
             series: self.usage_series(user_window, None),
             storage: self.storage(&a.by_cc, w_start.as_deref(), w_end.as_deref()),
+            requested_minutes: Some((re - rs) as f64 / 60.0),
         };
         let mut r = report::assemble(&self.cfg.report, &a, user_window, card.as_ref(), &x);
         r["window"]["requested"] =

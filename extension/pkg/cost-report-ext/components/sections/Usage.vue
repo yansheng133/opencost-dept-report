@@ -9,7 +9,7 @@ import {
 import { useRoute, useRouter } from 'vue-router';
 import CrSection from '../CrSection.vue';
 import { useReportContext } from '../../composables/useReportContext';
-import { getSeries, ApiError } from '../../utils/api';
+import { getSeries, ApiError, errorText as apiErrorText } from '../../utils/api';
 import {
   averages, buildChart, nearestPoint, pathOf, valueOf, wantedStep, xOf, BOX, Metric
 } from '../../utils/series';
@@ -50,7 +50,7 @@ export default defineComponent({
     const errorText = (e: unknown) => {
       if (e instanceof ApiError) {
         // Without its final period: it goes inside a sentence that has one.
-        return (e.code === 'series_budget' ? ctx.value.t('costReport.errors.series_budget', { seconds: e.retryAfterSeconds ?? '?' }) : ctx.value.t(`costReport.errors.${ e.code }`)).replace(/[。.]\s*$/, '');
+        return apiErrorText(ctx.value.t, e).replace(/[。.]\s*$/, '');
       }
 
       return String(e);

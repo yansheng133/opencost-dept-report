@@ -40,6 +40,10 @@ export const activeFilter = ref('all');
 // A request to unfold one section (a quick link to it was used).
 export const openRequest = ref<{ id: string; at: number } | null>(null);
 
+// Bumped on every fold or unfold, so the page can recompute which
+// section is current (the layout below has moved).
+export const foldChanged = ref(0);
+
 export function openSection(id: string) {
   openRequest.value = { id, at: Date.now() };
 }
@@ -65,6 +69,7 @@ export default defineComponent({
     function toggle(on = !folded.value) {
       folded.value = on;
       saveFolded(props.id, on);
+      foldChanged.value++;
     }
     watch(foldAll, (v) => v && toggle(v.on));
     watch(openRequest, (v) => v && v.id === props.id && folded.value && toggle(false));
@@ -83,16 +88,21 @@ export default defineComponent({
     :class="{ folded }"
   >
     <div class="cr-section-head">
-      <button
-        type="button"
-        class="btn btn-sm role-link cr-fold"
-        :aria-expanded="!folded"
-        :title="folded ? t('costReport.report.unfold') : t('costReport.report.fold')"
-        @click="toggle()"
-      >
-        <i :class="folded ? 'icon icon-chevron-right' : 'icon icon-chevron-down'" />
-      </button>
-      <h2>{{ title }}</h2>
+      <!-- The whole title folds the section (a real button inside the
+           heading); the # link next to it stays a separate link. -->
+      <h2>
+        <button
+          type="button"
+          class="cr-fold-btn"
+          :aria-expanded="!folded"
+          :aria-label="t('costReport.report.foldToggle', { title })"
+          :title="folded ? t('costReport.report.unfold') : t('costReport.report.fold')"
+          @click="toggle()"
+        >
+          <i :class="folded ? 'icon icon-chevron-right' : 'icon icon-chevron-down'" />
+          <span>{{ title }}</span>
+        </button>
+      </h2>
       <span
         v-if="clusterWide && activeFilter !== 'all'"
         class="cr-tag cr-tag-scope"

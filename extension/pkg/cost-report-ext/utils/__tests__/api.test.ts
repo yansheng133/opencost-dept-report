@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@jest/globals';
-import { errorFrom, periodQuery, validDay } from '../api';
+import { errorFrom, errorText, periodQuery, validDay } from '../api';
 
 describe('errorFrom', () => {
   it('reads the backend code from a Status', () => {
@@ -44,5 +44,34 @@ describe('validDay', () => {
     expect(validDay('2026-9-1')).toBeNull();
     expect(validDay(['2026-09-24'])).toBeNull();
     expect(validDay(undefined)).toBeNull();
+  });
+});
+
+describe('series errors', () => {
+  const t = (k: string, a?: Record<string, unknown>) => (a ? `${ k }${ JSON.stringify(a) }` : k);
+
+  it('known codes have their own text, unknown ones show the backend message', () => {
+    const noSeg = errorFrom(502, { kind: 'Status', error: { code: 'no_segments', message: 'OpenCost returned no segments' } });
+
+    expect(noSeg.code).toBe('no_segments');
+    expect(errorText(t, noSeg)).toBe('costReport.errors.no_segments');
+    for (const code of ['series_budget', 'bad_step', 'upstream']) {
+      expect(errorFrom(400, {
+        error: {
+          code, message: 'x', retryAfterSeconds: 3
+        }
+      }).code).toBe(code);
+    }
+    expect(errorText(t, errorFrom(429, {
+      error: {
+        code: 'series_budget', message: 'x', retryAfterSeconds: 3
+      }
+    }))).toBe('costReport.errors.series_budget{"seconds":3}');
+    const later = errorFrom(500, { error: { code: 'something_new', message: 'The backend explains it' } });
+
+    expect(later.code).toBe('other');
+    expect(errorText(t, later)).toBe('The backend explains it');
+    // No body at all is still "not understood".
+    expect(errorFrom(502, null).code).toBe('invalid');
   });
 });
