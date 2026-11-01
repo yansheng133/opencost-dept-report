@@ -79,8 +79,17 @@ jobs:
             "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
           echo "${GITLEAKS_SHA256}  /tmp/gitleaks.tar.gz" | sha256sum -c -
           tar -xzf /tmp/gitleaks.tar.gz -C /usr/local/bin gitleaks
-      # The whole history of this branch, not only the pushed commits.
-      - run: gitleaks git --redact --no-banner --verbose .
+      # The whole history of this branch, not only the pushed commits. A scan
+      # of 0 commits passes silently (git refuses a repository owned by
+      # another user), so the commit count is checked too.
+      - name: gitleaks
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          want="$(git rev-list --count HEAD)"
+          gitleaks git --redact --no-banner --no-color . 2>&1 | tee /tmp/gitleaks.log
+          got="$(sed -n 's/.* \([0-9][0-9]*\) commits scanned.*/\1/p' /tmp/gitleaks.log)"
+          [ "${got:-0}" -gt 0 ] && [ "$got" = "$want" ] \
+            || { echo "::error::gitleaks scanned ${got:-0} commits, the branch has $want"; exit 1; }
 
   chart:
     runs-on: ubuntu-24.04
