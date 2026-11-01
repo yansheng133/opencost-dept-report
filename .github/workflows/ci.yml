@@ -59,22 +59,44 @@ jobs:
 
   secrets:
     runs-on: ubuntu-24.04
+    container: registry.suse.com/bci/bci-base:16.0
+    defaults:
+      run:
+        shell: bash
+    env:
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
     steps:
+      # git before checkout, so the checkout is a real clone with history.
+      - run: zypper -n -q install --no-recommends git-core tar gzip
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install gitleaks
+        run: |
+          grep PRETTY_NAME /etc/os-release
+          curl -fsSL -o /tmp/gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  /tmp/gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/gitleaks.tar.gz -C /usr/local/bin gitleaks
+      # The whole history of this branch, not only the pushed commits.
+      - run: gitleaks git --redact --no-banner --verbose .
 
   chart:
     runs-on: ubuntu-24.04
+    container: registry.suse.com/bci/bci-base:16.0
+    defaults:
+      run:
+        shell: bash
     env:
       # Rancher 2.15 supports Kubernetes v1.34 to v1.36; validate against the lowest.
       KUBE_VERSION: 1.34.0
       KUBECONFORM_VERSION: v0.8.0
       KUBECONFORM_SHA256: 9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883
     steps:
+      - run: |
+          grep PRETTY_NAME /etc/os-release
+          zypper -n -q install --no-recommends tar gzip
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
@@ -84,7 +106,7 @@ jobs:
           curl -fsSL -o /tmp/kubeconform.tar.gz \
             "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
           echo "${KUBECONFORM_SHA256}  /tmp/kubeconform.tar.gz" | sha256sum -c -
-          sudo tar -xzf /tmp/kubeconform.tar.gz -C /usr/local/bin kubeconform
+          tar -xzf /tmp/kubeconform.tar.gz -C /usr/local/bin kubeconform
       - name: Chart version matches the release
         run: |
           cargo_version="$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"$/\1/p' Cargo.toml)"
