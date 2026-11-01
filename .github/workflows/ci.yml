@@ -98,7 +98,7 @@ jobs:
     steps:
       - run: |
           grep PRETTY_NAME /etc/os-release
-          zypper -n -q install --no-recommends tar gzip
+          zypper -n -q install --no-recommends tar gzip gawk
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Installed by hand: setup-helm's PATH change hides bash in this container.
       - name: Install helm and kubeconform

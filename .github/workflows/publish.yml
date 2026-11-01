@@ -59,7 +59,7 @@ jobs:
       - name: Tools
         run: |
           grep PRETTY_NAME /etc/os-release
-          zypper -n -q install --no-recommends git-core jq tar gzip findutils
+          zypper -n -q install --no-recommends git-core jq tar gzip findutils gawk
           curl -fsSL -o /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64"
           echo "${YQ_SHA256}  /usr/local/bin/yq" | sha256sum -c -
           chmod +x /usr/local/bin/yq
